@@ -1,0 +1,49 @@
+{
+  "revelation": {
+    "telos": "A Covenant-governed AI hedge fund that produces risk-adjusted returns through multi-agent analysis with constitutional risk controls.",
+    "setAt": "2026-07-10T00:00:00Z",
+    "progress": [],
+    "covenantRef": null
+  },
+  "canon": {
+    "babelThreshold": 24,
+    "tribalBabelThreshold": 12,
+    "hotspotFanOutThreshold": 4,
+    "hotspotFanInThreshold": 3
+  },
+  "agents": [
+    {
+      "id": "epoch-value",
+      "type": "epoch-container",
+      "mandate": "Epoch parent for value investing analyst agents",
+      "generation": 1,
+      "status": "registered",
+      "tribeId": "value",
+      "parentIds": [],
+      "bornAt": "2026-07-10T00:00:00Z",
+      "tokensExpected": "high"
+    },
+    {
+      "id": "epoch-quant",
+      "type": "epoch-container",
+      "mandate": "Epoch parent for quantitative analyst agents",
+      "generation": 1,
+      "status": "registered",
+      "tribeId": "quant",
+      "parentIds": [],
+      "bornAt": "2026-07-10T00:00:00Z",
+      "tokensExpected": "high"
+    },
+    {
+      "id": "epoch-macro",
+      "type": "epoch-container",
+      "mandate": "Epoch parent for macro and thematic analyst agents",
+      "generation": 1,
+      "status": "registered",
+      "tribeId": "macro",
+      "parentIds": [],
+      "bornAt": "2026-07-10T00:00:00Z",
+      "tokensExpected": "high"
+    }
+  ]
+}

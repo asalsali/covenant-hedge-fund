@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "covenant-hedge-fund"
+version = "0.1.0"
+description = "A Covenant Framework-governed AI hedge fund"
+authors = ["Alex Salsali"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+anthropic = ">=0.30.0"
+openai = ">=1.30.0"
+pydantic = ">=2.0.0"
+httpx = ">=0.27.0"
+python-dotenv = ">=1.0.0"
+numpy = ">=1.26.0"
+pandas = ">=2.2.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0.0"
+ruff = ">=0.4.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]

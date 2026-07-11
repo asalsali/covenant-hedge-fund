@@ -1,0 +1,33 @@
+{
+  "tribes": [
+    {
+      "id": "value",
+      "name": "Value Investing",
+      "territory": [
+        "src/agents/value.py",
+        "src/agents/base.py"
+      ],
+      "domain": "LLM-augmented fundamental analysis using legendary investor methodologies",
+      "denyExternalWrites": false
+    },
+    {
+      "id": "quant",
+      "name": "Quantitative Analysis",
+      "territory": [
+        "src/agents/quant.py",
+        "src/risk.py"
+      ],
+      "domain": "Computation-only analysis using numerical data -- no LLM calls permitted",
+      "denyExternalWrites": false
+    },
+    {
+      "id": "macro",
+      "name": "Macro and Thematic",
+      "territory": [
+        "src/agents/macro.py"
+      ],
+      "domain": "LLM-augmented macro, thematic, and special-situation analysis",
+      "denyExternalWrites": false
+    }
+  ]
+}

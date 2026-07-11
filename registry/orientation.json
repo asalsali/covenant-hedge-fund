@@ -1,0 +1,14 @@
+{
+  "currentMandate": "Build the Covenant-governed AI hedge fund: analyst agents, risk engine, portfolio management, and backtest infrastructure.",
+  "spiritOfTheWork": "Risk as constitutional law, not afterthought. Every position is bounded by volatility and correlation. Every analyst produces uniform signals. The system trades with discipline, not conviction alone.",
+  "whatToProtect": "The AnalystSignal interface -- all analysts must produce uniform outputs. The risk engine position limits -- no trade may bypass risk controls. The separation of LLM-augmented (value, macro) and computation-only (quant) domains.",
+  "currentTemptations": [
+    "Skipping risk checks to simplify the trading loop",
+    "Letting LLM analysts produce free-form output instead of structured signals",
+    "Building a UI before the backtest engine proves the system works",
+    "Over-engineering the analyst philosophies instead of shipping working analysis"
+  ],
+  "whereWeAre": "Project scaffolded. Agent definitions written. Risk and portfolio engines implemented. Next: wire analysts to data sources, build the backtest loop, validate with historical data.",
+  "lastUpdatedBy": "executor-20260711T013502",
+  "lastUpdatedAt": "2026-07-11T00:00:00Z"
+}

@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Covenant Framework runtime artifacts
+memory/inheritance/
+memory/memos/
+memory/checkpoints/
+memory/distillation-cache/
+memory/semantic/
+memory/domains/
+registry/tokens-log.json
+registry/hook-errors.log
+registry/dream-log.json
+registry/hotspots.json
+registry/baselines.json
+registry/trust-registry.json
+registry/skills.json
+registry/transfigurations.json
+registry/dispositions.json
+
+# Data cache
+.cache/
+*.pickle
