@@ -61,19 +61,24 @@ def _extract_value_facts(ticker: str, data: dict) -> dict:
             "operating_cash_flow": _to_float(li.get("operating_cash_flow")),
         })
 
+    # Format ratios as percentages so LLMs read "14.1%" not "0.141"
+    def _pct(val):
+        v = _to_float(val)
+        return f"{v * 100:.1f}%" if v is not None else None
+
     return {
         "ticker": ticker,
         "current_price": current_price,
         "price_change_pct": price_change_pct,
-        "return_on_equity": _to_float(cur.get("return_on_equity")),
-        "debt_to_equity": _to_float(cur.get("debt_to_equity")),
-        "current_ratio": _to_float(cur.get("current_ratio")),
-        "net_margin": _to_float(cur.get("net_margin")),
-        "gross_margin": _to_float(cur.get("gross_margin")),
-        "price_to_earnings": _to_float(cur.get("price_to_earnings")),
-        "ev_to_ebitda": _to_float(cur.get("ev_to_ebitda")),
+        "return_on_equity": _pct(cur.get("return_on_equity")),
+        "debt_to_equity": _to_float(cur.get("debt_to_equity")),  # ratio, not %
+        "current_ratio": _to_float(cur.get("current_ratio")),    # ratio, not %
+        "net_margin": _pct(cur.get("net_margin")),
+        "gross_margin": _pct(cur.get("gross_margin")),
+        "price_to_earnings": _to_float(cur.get("price_to_earnings")),  # multiple
+        "ev_to_ebitda": _to_float(cur.get("ev_to_ebitda")),            # multiple
         "market_cap": _to_float(cur.get("market_cap")),
-        "earnings_growth": _to_float(cur.get("earnings_growth")),
+        "earnings_growth": _pct(cur.get("earnings_growth")),
         "line_items": li_data,
     }
 

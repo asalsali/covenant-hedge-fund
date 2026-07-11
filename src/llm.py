@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 import urllib.request
 
@@ -74,14 +75,21 @@ def call_llm(system_prompt: str, user_prompt: str) -> str:
     # 2. Anthropic (Claude)
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if anthropic_key:
-        return _call_anthropic(system_prompt, user_prompt, anthropic_key)
+        result = _call_anthropic(system_prompt, user_prompt, anthropic_key)
+        if result != _FALLBACK_RESPONSE:
+            return result
+        # Anthropic failed -- fall through to OpenAI
 
     # 3. OpenAI
     openai_key = os.environ.get("OPENAI_API_KEY")
     if openai_key:
-        return _call_openai(system_prompt, user_prompt, openai_key)
+        result = _call_openai(system_prompt, user_prompt, openai_key)
+        if result != _FALLBACK_RESPONSE:
+            return result
 
     # 4. Fallback -- neutral/0
+    if not anthropic_key and not openai_key:
+        print("  [LLM] No API key configured", file=sys.stderr)
     return _FALLBACK_RESPONSE
 
 
@@ -152,7 +160,8 @@ def _call_anthropic(system_prompt: str, user_prompt: str, api_key: str) -> str:
                 messages=[{"role": "user", "content": user_prompt}],
             )
             return response.content[0].text
-        except Exception:
+        except Exception as e:
+            print(f"  [LLM] Anthropic error (attempt {attempt + 1}/2): {e}", file=sys.stderr)
             if attempt == 0:
                 time.sleep(3)
             else:
@@ -181,7 +190,8 @@ def _call_openai(system_prompt: str, user_prompt: str, api_key: str) -> str:
                 ],
             )
             return response.choices[0].message.content or _FALLBACK_RESPONSE
-        except Exception:
+        except Exception as e:
+            print(f"  [LLM] OpenAI error (attempt {attempt + 1}/2): {e}", file=sys.stderr)
             if attempt == 0:
                 time.sleep(3)
             else:

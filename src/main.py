@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from datetime import date, timedelta
 from typing import Any
 
@@ -50,6 +51,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--show-reasoning",
         action="store_true",
         help="Display analyst reasoning in output.",
+    )
+    parser.add_argument(
+        "--sequential",
+        action="store_true",
+        help="Run analysts sequentially instead of in parallel (default: parallel).",
     )
     return parser.parse_args(argv)
 
@@ -117,7 +123,7 @@ def main(argv: list[str] | None = None) -> None:
     # -------------------------------------------------------------------------
     # 2. Fetch market data
     # -------------------------------------------------------------------------
-    print("[1/8] Fetching market data...")
+    print("[1/6] Fetching market data...")
 
     LINE_ITEMS_TO_FETCH = [
         "revenue", "net_income", "free_cash_flow",
@@ -168,76 +174,42 @@ def main(argv: list[str] | None = None) -> None:
     print()
 
     # -------------------------------------------------------------------------
-    # 3. Run quant analysts
+    # 3. Run all analysts (parallel by default, --sequential for fallback)
     # -------------------------------------------------------------------------
-    print("[2/8] Running quant analysts...")
-
     from src.agents.quant import QUANT_ANALYSTS
+    from src.agents.value import VALUE_ANALYSTS
+    from src.agents.macro import MACRO_ANALYSTS
+    from src.agents.parallel import run_analysts_parallel, run_analysts_sequential
 
-    analysts = [AnalystClass() for AnalystClass in QUANT_ANALYSTS]
-    all_signals: dict[str, dict[str, Any]] = {}
-    # all_signals[ticker][analyst_name] = AnalystSignal
+    all_analysts = (
+        [Cls() for Cls in QUANT_ANALYSTS]
+        + [Cls() for Cls in VALUE_ANALYSTS]
+        + [Cls() for Cls in MACRO_ANALYSTS]
+    )
+    analyst_names = [a.name for a in all_analysts]
 
-    for analyst in analysts:
-        results = analyst.analyze(active_tickers, market_data)
-        for ticker, signal in results.items():
-            if ticker not in all_signals:
-                all_signals[ticker] = {}
-            all_signals[ticker][analyst.name] = signal
+    run_fn = run_analysts_sequential if args.sequential else run_analysts_parallel
+    mode_label = "sequential" if args.sequential else "parallel"
 
-    analyst_names = [a.name for a in analysts]
-    print(f"  Analysts: {', '.join(analyst_names)}")
+    print(f"[2/6] Running {len(all_analysts)} analysts ({mode_label})...")
+    print(f"  Quant:  {', '.join(a.name for a in all_analysts if a.domain == 'quant')}")
+    print(f"  Value:  {', '.join(a.name for a in all_analysts if a.domain == 'value')}")
+    print(f"  Macro:  {', '.join(a.name for a in all_analysts if a.domain == 'macro')}")
+
+    all_signals: dict[str, dict[str, Any]]
+    all_signals, analyst_elapsed = run_fn(
+        all_analysts, active_tickers, market_data, verbose=True,
+    )
+
+    print()
+    print(f"  All analysts complete in {analyst_elapsed:.1f}s ({mode_label})")
     print(f"  Signals collected for {len(all_signals)} tickers")
     print()
 
     # -------------------------------------------------------------------------
-    # 4. Run value analysts (LLM-augmented)
+    # 4. Risk calculations
     # -------------------------------------------------------------------------
-    print("[3/8] Running value analysts...")
-
-    from src.agents.value import VALUE_ANALYSTS
-
-    value_analysts = [AnalystClass() for AnalystClass in VALUE_ANALYSTS]
-    for analyst in value_analysts:
-        print(f"  Running {analyst.name}...", end=" ", flush=True)
-        results = analyst.analyze(active_tickers, market_data)
-        for ticker, signal in results.items():
-            if ticker not in all_signals:
-                all_signals[ticker] = {}
-            all_signals[ticker][analyst.name] = signal
-        print(f"done ({', '.join(f'{t}:{results[t].signal}' for t in active_tickers if t in results)})")
-
-    value_names = [a.name for a in value_analysts]
-    analyst_names.extend(value_names)
-    print(f"  Value analysts: {', '.join(value_names)}")
-    print()
-
-    # -------------------------------------------------------------------------
-    # 5. Run macro analysts (LLM-augmented)
-    # -------------------------------------------------------------------------
-    print("[4/8] Running macro analysts...")
-
-    from src.agents.macro import MACRO_ANALYSTS
-
-    macro_analysts = [AnalystClass() for AnalystClass in MACRO_ANALYSTS]
-    for analyst in macro_analysts:
-        print(f"  Running {analyst.name}...", end=" ", flush=True)
-        results = analyst.analyze(active_tickers, market_data)
-        for ticker, signal in results.items():
-            if ticker not in all_signals:
-                all_signals[ticker] = {}
-            all_signals[ticker][analyst.name] = signal
-        print(f"done ({', '.join(f'{t}:{results[t].signal}' for t in active_tickers if t in results)})")
-
-    macro_names = [a.name for a in macro_analysts]
-    analyst_names.extend(macro_names)
-    print(f"  Macro analysts: {', '.join(macro_names)}")
-    print()
-
-    # -------------------------------------------------------------------------
-    # 6. Risk calculations
-    # -------------------------------------------------------------------------
-    print("[5/8] Computing risk metrics...")
+    print("[3/6] Computing risk metrics...")
 
     from src.risk import (
         compute_volatility,
@@ -295,9 +267,9 @@ def main(argv: list[str] | None = None) -> None:
     print()
 
     # -------------------------------------------------------------------------
-    # 5. Quorum check and confidence-weighted synthesis
+    # 4b. Quorum check and confidence-weighted synthesis
     # -------------------------------------------------------------------------
-    print("[6/8] Synthesizing decisions...")
+    print("[4/6] Synthesizing decisions...")
 
     QUORUM_THRESHOLD = 3  # CF-COMP-021: minimum distinct non-neutral signals
     SCORE_THRESHOLD = 0.3  # Normalized score threshold for action
@@ -401,9 +373,9 @@ def main(argv: list[str] | None = None) -> None:
             }
 
     # -------------------------------------------------------------------------
-    # 6. Execute trades
+    # 5. Execute trades
     # -------------------------------------------------------------------------
-    print("[7/8] Executing trades...")
+    print("[5/6] Executing trades...")
 
     trades_executed: list[str] = []
 
@@ -462,9 +434,9 @@ def main(argv: list[str] | None = None) -> None:
     print()
 
     # -------------------------------------------------------------------------
-    # 8. Report
+    # 6. Report
     # -------------------------------------------------------------------------
-    print("[8/8] Generating report...")
+    print("[6/6] Generating report...")
     print()
     print("=" * 70)
     print("ANALYSIS REPORT")
