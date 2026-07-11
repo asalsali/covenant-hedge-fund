@@ -1,0 +1,115 @@
+======================================================================
+COVENANT HEDGE FUND -- Analysis Run
+======================================================================
+  Tickers:    AAPL, MSFT, GOOGL, AMZN, NVDA, JPM, JNJ, XOM
+  Date range: 2026-04-12 to 2026-07-11
+  Cash:       $100,000.00
+
+[1/8] Fetching market data...
+  AAPL: 62 price bars, 5 metric periods, 50 insider trades
+  MSFT: 62 price bars, 5 metric periods, 50 insider trades
+  GOOGL: 62 price bars, 5 metric periods, 42 insider trades
+  AMZN: 62 price bars, 4 metric periods, 50 insider trades
+  NVDA: 62 price bars, 5 metric periods, 50 insider trades
+  JPM: 62 price bars, 5 metric periods, 24 insider trades
+  JNJ: 62 price bars, 5 metric periods, 50 insider trades
+  XOM: 62 price bars, 5 metric periods, 50 insider trades
+
+[2/8] Running quant analysts...
+  Analysts: technicals, fundamentals, valuation, growth, sentiment
+  Signals collected for 8 tickers
+
+[5/8] Computing risk metrics...
+  Avg correlation: 0.0235 (multiplier: 1.10)
+  AAPL: vol=28.55% (medium), limit=$16,500
+  MSFT: vol=35.45% (high), limit=$11,000
+  GOOGL: vol=37.44% (high), limit=$10,450
+  AMZN: vol=38.33% (high), limit=$10,175
+  NVDA: vol=40.49% (high), limit=$9,625
+  JPM: vol=22.56% (medium), limit=$18,975
+  JNJ: vol=24.35% (medium), limit=$17,875
+  XOM: vol=27.38% (medium), limit=$17,050
+
+[6/8] Synthesizing decisions...
+
+[7/8] Executing trades...
+  BUY      25 AAPL @ $315.32 ($7,883.00)
+  BUY      18 MSFT @ $385.10 ($6,931.80)
+  BUY      27 GOOGL @ $268.01 ($7,236.27)
+  BUY      20 AMZN @ $303.93 ($6,078.60)
+  BUY      69 JPM @ $197.15 ($13,603.35)
+  SHORT    28 XOM @ $112.91 ($3,161.48)
+
+[8/8] Generating report...
+
+======================================================================
+ANALYSIS REPORT
+======================================================================
+
+--- AAPL ---
+  Signals: technicals:-11 | fundamentals:+28 | valuation:-77 | growth:+48 | sentiment:+90
+  Risk: vol=28.55% (medium), limit=$16,500
+  Decision: BUY 25 shares (score=+0.31)
+  Reasoning: Bullish consensus (score=+0.31)
+
+--- MSFT ---
+  Signals: technicals:=1 | fundamentals:+35 | valuation:-46 | growth:+33 | sentiment:+90
+  Risk: vol=35.45% (high), limit=$11,000
+  Decision: BUY 18 shares (score=+0.55)
+  Reasoning: Bullish consensus (score=+0.55)
+
+--- GOOGL ---
+  Signals: technicals:-18 | fundamentals:+40 | valuation:-52 | growth:+33 | sentiment:+63
+  Risk: vol=37.44% (high), limit=$10,450
+  Decision: BUY 27 shares (score=+0.38)
+  Reasoning: Bullish consensus (score=+0.38)
+
+--- AMZN ---
+  Signals: technicals:-3 | fundamentals:+31 | valuation:-80 | growth:+48 | sentiment:+90
+  Risk: vol=38.33% (high), limit=$10,175
+  Decision: BUY 20 shares (score=+0.36)
+  Reasoning: Bullish consensus (score=+0.36)
+
+--- NVDA ---
+  Signals: technicals:+14 | fundamentals:+42 | valuation:-83 | growth:+19 | sentiment:+90
+  Risk: vol=40.49% (high), limit=$9,625
+  Decision: HOLD 0 shares (score=+0.28)
+  Reasoning: Score within threshold (score=+0.28)
+
+--- JPM ---
+  Signals: technicals:+54 | fundamentals:+28 | valuation:+33 | growth:+25 | sentiment:+45
+  Risk: vol=22.56% (medium), limit=$18,975
+  Decision: BUY 69 shares (score=+0.82)
+  Reasoning: Bullish consensus (score=+0.82)
+
+--- JNJ ---
+  Signals: technicals:+21 | fundamentals:+10 | valuation:+44 | growth:-15 | sentiment:+59
+  Risk: vol=24.35% (medium), limit=$17,875
+  Decision: HOLD 0 shares (score=+0.29)
+  Reasoning: Score within threshold (score=+0.29)
+
+--- XOM ---
+  Signals: technicals:-30 | fundamentals:+25 | valuation:-10 | growth:-51 | sentiment:+30
+  Risk: vol=27.38% (medium), limit=$17,050
+  Decision: SHORT 28 shares (score=-0.31)
+  Reasoning: Bearish consensus (score=-0.31)
+
+----------------------------------------------------------------------
+PORTFOLIO STATE
+----------------------------------------------------------------------
+  Cash:          $55,106.50
+  Margin used:   $1,580.74
+  Portfolio val:  $100,000.00
+  Return:         +0.00%
+
+  Positions:
+    AAPL LONG: 25 shares @ $315.32 (mkt $7,883.00, P&L $+0.00)
+    MSFT LONG: 18 shares @ $385.10 (mkt $6,931.80, P&L $+0.00)
+    GOOGL LONG: 27 shares @ $268.01 (mkt $7,236.27, P&L $+0.00)
+    AMZN LONG: 20 shares @ $303.93 (mkt $6,078.60, P&L $+0.00)
+    JPM LONG: 69 shares @ $197.15 (mkt $13,603.35, P&L $+0.00)
+    XOM SHORT: 28 shares @ $112.91 (mkt $3,161.48, P&L $+0.00)
+
+  Trades executed: 6
+
+======================================================================

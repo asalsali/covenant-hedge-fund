@@ -1,0 +1,37 @@
+======================================================================
+COVENANT HEDGE FUND -- Backtest Mode
+======================================================================
+  Tickers:    AAPL, MSFT, GOOGL, AMZN, NVDA, JPM, JNJ, XOM
+  Date range: 2025-01-01 to 2026-07-11
+  Cash:       $100,000.00
+  Rebalance:  every 5 trading days
+  Lookback:   60 trading days
+
+[Results after 320 trading days]
+
+======================================================================
+BACKTEST RESULTS
+======================================================================
+  Period:           2025-01-01 to 2026-07-11 (320 trading days)
+  Initial capital:  $100,000.00
+  Final value:      $173,290.00
+
+  PERFORMANCE
+  ------------------------------------------------------------------
+  Total return:      +73.29%
+  Annualized return: +54.39%
+  Sharpe ratio:      2.2008
+  Sortino ratio:     4.0125
+  Max drawdown:      -15.06% (on 2026-03-27)
+
+  VS BENCHMARK (SPY)
+  ------------------------------------------------------------------
+  SPY return:        +36.47%
+  Alpha:             +36.82%
+
+  TRADING SUMMARY
+  ------------------------------------------------------------------
+  Total trades:      18
+  Realized P&L:      $0.00
+
+======================================================================

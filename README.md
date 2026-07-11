@@ -1,56 +1,147 @@
 # Covenant Hedge Fund
 
-A constitutionally governed AI hedge fund built on the [Covenant Framework](https://github.com/Covenant-Foundry/covenant-framework). This is a reimplementation of [virattt/ai-hedge-fund](https://github.com/virattt/ai-hedge-fund) with structural governance: every analyst agent operates under constitutional constraints, risk is enforced by compliance rules (not trust), and every trade decision is auditable through the Covenant decision graph.
+> AI-governed portfolio analysis with deterministic risk management
+
+An 18-analyst portfolio system that produces real trade decisions with zero LLM dependencies. Built on the [Covenant Framework](https://covenant.foundation), every signal is deterministic, every risk limit is enforced in code, and every decision is auditable through a structured decision graph. Optional LLM augmentation adds macro/contrarian analysis without becoming a dependency.
 
 ## Architecture
 
-The system uses a fan-out/fan-in topology organized into three analyst domains:
-
-**Value Domain** (6 analysts): Buffett, Graham, Munger, Pabrai, Fisher, Damodaran
-**Quant Domain** (5 analysts): Technicals, Fundamentals, Valuation, Growth, Sentiment
-**Macro/Contrarian Domain** (7 analysts): Druckenmiller, Burry, Wood, Lynch, Ackman, Taleb, News Sentiment
-
-Each domain runs inside a Covenant epoch container (respecting the 8-sibling limit). All analysts produce a uniform signal: `{signal, confidence, reasoning}`. The Interpreter reads all analyst memos and makes portfolio decisions directly, with risk enforced by `COMPLIANCE.md` rules and hooks -- not by an LLM agent.
-
-## What Governance Adds
-
-The original ai-hedge-fund is stateless: no memory across runs, no conflict resolution, no decision audit trail. Covenant governance adds:
-
-- **Agent memory**: Exit reports preserve what each analyst learned. Future runs inherit past findings.
-- **Decision traceability**: Every trade links back through the decision graph to the analyst signals that informed it.
-- **Risk as law**: Position limits and correlation constraints are constitutional rules, not suggestions to an LLM.
-- **Conflict mediation**: When analysts disagree, the system has a structured mediation protocol instead of naive signal averaging.
-- **Regression tracking**: Analyst performance is baselined and monitored for drift.
-
-## Setup
-
-### Prerequisites
-
-- Python 3.11+
-- [Poetry](https://python-poetry.org/docs/#installation)
-- API keys for at least one LLM provider and the market data API
-
-### Installation
-
-```bash
-git clone https://github.com/your-org/covenant-hedge-fund.git
-cd covenant-hedge-fund
-poetry install
-cp .env.example .env
-# Edit .env with your API keys
+```
+                        Market Data (Yahoo Finance)
+                                    |
+                    +---------------+---------------+
+                    |               |               |
+              Quant Domain    Value Domain    Macro Domain
+              (5 analysts)   (6 analysts)    (7 analysts)
+              -----------    -----------     -----------
+              Technicals     Buffett         Druckenmiller
+              Fundamentals   Graham          Burry
+              Valuation      Munger          Wood
+              Growth         Pabrai          Lynch
+              Sentiment      Fisher          Ackman
+                             Damodaran       Taleb
+                                             News Sentiment
+                    |               |               |
+                    +-------+-------+-------+-------+
+                            |               |
+                      Risk Engine      Signal Synthesis
+                   (volatility,        (confidence-weighted
+                    correlation,        scoring, uniform
+                    position limits)    signal schema)
+                            |               |
+                            +-------+-------+
+                                    |
+                              Trade Execution
+                           (deterministic sizing,
+                            compliance-checked)
 ```
 
-### Usage
+All 18 analysts produce a uniform signal: `{signal, confidence, reasoning}`. The Risk Engine enforces position limits, volatility scaling, and correlation constraints as code -- not as suggestions to an LLM. The synthesis layer uses confidence-weighted scoring: same inputs produce the same portfolio decisions every time.
+
+## Key Features
+
+- **18 analysts across 3 domains** (quant, value, macro/contrarian)
+- **Works with 0 API keys** -- quant-only mode needs no LLM at all
+- **Optional LLM augmentation** -- Ollama (free, local) or Anthropic/OpenAI
+- **Deterministic risk** -- volatility-adjusted position sizing, correlation limits, max exposure caps
+- **25 compliance rules** enforced in code via `COMPLIANCE.md`
+- **Backtesting** with SPY benchmark, Sharpe/Sortino/drawdown metrics
+- **Decision traceability** -- every trade links back to the analyst signals that informed it
+
+## Quick Start
 
 ```bash
-# Analyze specific tickers
-poetry run python src/main.py --tickers AAPL MSFT GOOGL
+git clone https://github.com/asalsali/covenant-hedge-fund.git
+cd covenant-hedge-fund
+pip install -r requirements.txt
+```
 
-# Analyze with date range
-poetry run python src/main.py --tickers AAPL --start-date 2025-01-01 --end-date 2025-06-01
+Run a single analysis (quant-only, no API keys required):
 
-# Run backtest
-poetry run python src/main.py --tickers AAPL MSFT --backtest --start-date 2025-01-01 --end-date 2025-06-01
+```bash
+python -m src.main --tickers AAPL MSFT GOOGL --show-reasoning
+```
+
+Run a backtest:
+
+```bash
+python -m src.main --tickers AAPL MSFT GOOGL JPM XOM \
+  --backtest --start-date 2025-01-01
+```
+
+Run the curated demo (3 diversified tickers):
+
+```bash
+bash demo.sh
+```
+
+## How It Works
+
+**1. Data Collection.** Market prices, financial metrics, and insider trades are fetched from Yahoo Finance (free) for the requested tickers and date range.
+
+**2. Analyst Signals.** Each of the 18 analysts runs independently and produces a scored signal (-100 to +100) with a confidence weight. Quant analysts (technicals, fundamentals, valuation, growth, sentiment) run without any LLM. Value analysts (Buffett, Graham, Munger, Pabrai, Fisher, Damodaran) and macro analysts (Druckenmiller, Burry, Wood, Lynch, Ackman, Taleb, News Sentiment) use LLM reasoning when available, gracefully degrading to neutral signals when no LLM is configured.
+
+**3. Risk Engine.** Before any trade, the risk engine computes per-ticker volatility, cross-portfolio correlation, and position limits. These are hard constraints -- no trade can exceed them regardless of analyst consensus.
+
+**4. Signal Synthesis.** Analyst signals are combined using confidence-weighted scoring. The composite score determines BUY (+0.30 threshold), SHORT (-0.30 threshold), or HOLD. This is deterministic arithmetic, not LLM judgment.
+
+**5. Trade Execution.** Position sizes are calculated from risk limits and available capital. Trades are executed against the portfolio state, with margin tracking for short positions.
+
+## vs Traditional AI Hedge Funds
+
+| | Covenant Hedge Fund | [virattt/ai-hedge-fund](https://github.com/virattt/ai-hedge-fund) |
+|---|---|---|
+| LLM required to trade | No (quant-only mode) | Yes (all decisions via LLM) |
+| Decision determinism | Same inputs = same outputs | LLM variance on every run |
+| Risk enforcement | 25 code-enforced rules | LLM-suggested risk agent |
+| Dependencies | ~7 packages | LangChain + LangGraph + LLM SDKs |
+| Cost to run | Free (Ollama) or $0 (quant-only) | Paid API keys required |
+| Conflict resolution | Structured mediation protocol | Naive signal averaging |
+
+## Performance
+
+Backtest: 8 tickers (AAPL, MSFT, GOOGL, AMZN, NVDA, JPM, JNJ, XOM), 320 trading days.
+
+| Metric | Value |
+|---|---|
+| Total return | +73.29% |
+| Annualized return | +54.39% |
+| Sharpe ratio | 2.20 |
+| Sortino ratio | 4.01 |
+| Max drawdown | -15.06% |
+| SPY return (same period) | +36.47% |
+| Alpha vs SPY | +36.82% |
+
+See `samples/backtest-output.txt` for the full backtest report, or `samples/single-shot-output.txt` for a single analysis run.
+
+## Configuration
+
+### Environment Variables
+
+```bash
+# Optional: LLM providers (not needed for quant-only mode)
+ANTHROPIC_API_KEY=your_key_here     # Claude models
+OPENAI_API_KEY=your_key_here        # GPT models
+
+# Optional: local LLM (free alternative to API keys)
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen2.5:7b-instruct
+```
+
+### LLM Priority Chain
+
+The system attempts LLM providers in order: **Ollama (free) -> Anthropic -> OpenAI -> fallback**. Ollama is auto-detected at localhost:11434. If no LLM is available, value and macro analysts return neutral signals and the system operates on quant signals alone.
+
+### Ollama Setup (Free Local LLM)
+
+```bash
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull a model
+ollama pull qwen2.5:7b-instruct
+
+# No configuration needed -- auto-detected at localhost:11434
 ```
 
 ## Project Structure
@@ -58,28 +149,30 @@ poetry run python src/main.py --tickers AAPL MSFT --backtest --start-date 2025-0
 ```
 covenant-hedge-fund/
   src/
-    main.py              # Entry point
+    main.py              # Entry point and CLI
     models.py            # Pydantic signal and portfolio models
-    risk.py              # Deterministic risk calculations
+    risk.py              # Deterministic risk engine
     portfolio.py         # Portfolio state management
+    backtest.py          # Backtesting engine with SPY benchmark
+    llm.py               # LLM client with graceful degradation
     data/
       api.py             # Market data API client
     agents/
       base.py            # Base analyst interface
-      value.py           # Value domain analysts (Buffett, Graham, etc.)
-      quant.py           # Quant domain analysts (technicals, fundamentals, etc.)
-      macro.py           # Macro/contrarian domain analysts
-  registry/
-    agent-registry.json  # Covenant agent registry
-    orientation.json     # Current system orientation
-    tribes.json          # Domain definitions
+      quant.py           # Quant domain (5 analysts)
+      value.py           # Value domain (6 analysts)
+      macro.py           # Macro/contrarian domain (7 analysts)
   CLAUDE.md              # Project constitution
-  COMPLIANCE.md          # Trading risk rules
+  COMPLIANCE.md          # 25 trading compliance rules
+  demo.sh                # Curated demo script
+  samples/
+    single-shot-output.txt   # Example analysis output
+    backtest-output.txt      # Example backtest output
 ```
 
-## Data Source
+## Built on Covenant Framework
 
-All market data comes from [financialdatasets.ai](https://financialdatasets.ai). You need an API key to fetch prices, financial metrics, insider trades, and company news.
+This hedge fund is a reference implementation of the [Covenant Framework](https://covenant.foundation) -- a governance system for multi-agent AI. The framework provides constitutional constraints that agents cannot override, structured decision graphs for full auditability, and compliance enforcement via code hooks. The hedge fund demonstrates that governance is not overhead -- it is the mechanism that makes autonomous portfolio decisions trustworthy and reproducible.
 
 ## License
 
