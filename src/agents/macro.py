@@ -7,11 +7,244 @@ serve as system prompts for LLM-based analysis.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
+import numpy as np
+
 from src.agents.base import BaseAnalyst
+from src.agents.value import (
+    _extract_value_facts,
+    _pad,
+    _parse_llm_signal,
+    _to_float,
+)
+from src.llm import LLM_INSTRUCTION_SUFFIX, call_llm
 from src.models import AnalystSignal
 
+
+# ---------------------------------------------------------------------------
+# Macro-specific fact extractors
+# ---------------------------------------------------------------------------
+
+def _extract_druckenmiller_facts(ticker: str, data: dict) -> dict:
+    """Base value facts plus volatility and moving average metrics."""
+    facts = _extract_value_facts(ticker, data)
+    prices = data.get("prices", [])
+    closes = [p["close"] for p in prices if p.get("close") is not None]
+
+    if len(closes) >= 2:
+        returns = np.diff(closes) / np.array(closes[:-1])
+        facts["recent_volatility"] = round(float(np.std(returns)) * 100, 4)
+    else:
+        facts["recent_volatility"] = None
+
+    if len(closes) >= 50:
+        facts["sma_50"] = round(float(np.mean(closes[-50:])), 2)
+    else:
+        facts["sma_50"] = None
+
+    if len(closes) >= 200:
+        facts["sma_200"] = round(float(np.mean(closes[-200:])), 2)
+    else:
+        facts["sma_200"] = None
+
+    return facts
+
+
+def _extract_burry_facts(ticker: str, data: dict) -> dict:
+    """Base value facts plus debt trend and margin compression."""
+    facts = _extract_value_facts(ticker, data)
+    metrics = data.get("financial_metrics", [])
+
+    # D/E trend
+    de_values = []
+    for m in metrics[:3]:
+        de = _to_float(m.get("debt_to_equity"))
+        if de is not None:
+            de_values.append(de)
+    facts["debt_to_equity_trend"] = de_values if de_values else None
+
+    # Margin compression detection
+    margin_values = []
+    for m in metrics[:3]:
+        nm = _to_float(m.get("net_margin"))
+        if nm is not None:
+            margin_values.append(nm)
+    facts["net_margin_trend"] = margin_values if margin_values else None
+    if len(margin_values) >= 2:
+        facts["margin_compressing"] = margin_values[0] < margin_values[-1]
+    else:
+        facts["margin_compressing"] = None
+
+    return facts
+
+
+def _extract_wood_facts(ticker: str, data: dict) -> dict:
+    """Base value facts plus revenue growth rate and R&D proxy."""
+    facts = _extract_value_facts(ticker, data)
+    line_items = data.get("line_items", [])
+
+    revs = [_to_float(li.get("revenue")) for li in line_items[:3]]
+    revs = [r for r in revs if r is not None and r > 0]
+    if len(revs) >= 2:
+        facts["revenue_growth_rate"] = round((revs[0] / revs[-1]) ** (1.0 / (len(revs) - 1)) - 1, 4)
+    else:
+        facts["revenue_growth_rate"] = None
+
+    # Use earnings_growth as R&D proxy (actual R&D not in available data)
+    facts["innovation_proxy_earnings_growth"] = facts.get("earnings_growth")
+
+    return facts
+
+
+def _extract_lynch_facts(ticker: str, data: dict) -> dict:
+    """Base value facts plus PEG calculation and category hints."""
+    facts = _extract_value_facts(ticker, data)
+    pe = facts.get("price_to_earnings")
+    eg = facts.get("earnings_growth")
+
+    if pe and pe > 0 and eg and eg > 0:
+        eg_pct = eg * 100 if eg < 1 else eg
+        if eg_pct > 0:
+            facts["peg_ratio"] = round(pe / eg_pct, 2)
+        else:
+            facts["peg_ratio"] = None
+    else:
+        facts["peg_ratio"] = None
+
+    # Category hint based on earnings growth
+    if eg is not None:
+        if eg > 0.20:
+            facts["category_hint"] = "fast_grower"
+        elif eg > 0.05:
+            facts["category_hint"] = "stalwart"
+        elif eg >= 0:
+            facts["category_hint"] = "slow_grower"
+        else:
+            facts["category_hint"] = "possible_turnaround"
+    else:
+        facts["category_hint"] = "unknown"
+
+    return facts
+
+
+def _extract_ackman_facts(ticker: str, data: dict) -> dict:
+    """Base value facts plus FCF yield and insider buying patterns."""
+    facts = _extract_value_facts(ticker, data)
+    line_items = data.get("line_items", [])
+    metrics = data.get("financial_metrics", [])
+    insider_trades = data.get("insider_trades", [])
+
+    # FCF yield
+    fcf = _to_float(line_items[0].get("free_cash_flow")) if line_items else None
+    mc = _to_float(metrics[0].get("market_cap")) if metrics else None
+    if fcf and mc and mc > 0:
+        facts["fcf_yield"] = round(fcf / mc, 4)
+    else:
+        facts["fcf_yield"] = None
+
+    # Insider buying pattern
+    buys, sells = 0, 0
+    for t in insider_trades:
+        tx = (t.get("transaction_type") or "").upper()
+        if "P" in tx or "BUY" in tx or "PURCHASE" in tx:
+            buys += 1
+        elif "S" in tx or "SELL" in tx or "SALE" in tx:
+            sells += 1
+    facts["insider_buys"] = buys
+    facts["insider_sells"] = sells
+    total = buys + sells
+    facts["insider_buy_ratio"] = round(buys / total, 2) if total > 0 else None
+
+    return facts
+
+
+def _extract_taleb_facts(ticker: str, data: dict) -> dict:
+    """Base value facts plus volatility, leverage, and longevity."""
+    facts = _extract_value_facts(ticker, data)
+    prices = data.get("prices", [])
+    line_items = data.get("line_items", [])
+    closes = [p["close"] for p in prices if p.get("close") is not None]
+
+    # Volatility metrics
+    if len(closes) >= 2:
+        returns = np.diff(closes) / np.array(closes[:-1])
+        facts["daily_vol"] = round(float(np.std(returns)) * 100, 4)
+        facts["annualized_vol"] = round(float(np.std(returns) * np.sqrt(252)) * 100, 2)
+        # Kurtosis (fat tails indicator)
+        if len(returns) >= 10:
+            facts["return_kurtosis"] = round(float(
+                np.mean((returns - np.mean(returns)) ** 4) /
+                (np.std(returns) ** 4) - 3
+            ), 2)
+        else:
+            facts["return_kurtosis"] = None
+    else:
+        facts["daily_vol"] = None
+        facts["annualized_vol"] = None
+        facts["return_kurtosis"] = None
+
+    # Leverage ratio
+    facts["leverage_de"] = facts.get("debt_to_equity")
+
+    # Business longevity estimate (proxy: number of annual periods available)
+    facts["data_periods_available"] = len(line_items)
+    facts["lindy_proxy_years"] = len(line_items)  # each period ~1 year
+
+    return facts
+
+
+def _extract_news_facts(ticker: str, data: dict) -> dict:
+    """Minimal facts -- news data not available via free API."""
+    facts = _extract_value_facts(ticker, data)
+    facts["news_data_available"] = False
+    facts["note"] = (
+        "Real-time news data not available via current data sources. "
+        "Sentiment analysis limited to financial metrics inference."
+    )
+    return facts
+
+
+# ---------------------------------------------------------------------------
+# Shared runner for macro analysts
+# ---------------------------------------------------------------------------
+
+def _run_macro_analyst(
+    analyst: BaseAnalyst,
+    tickers: list[str],
+    market_data: dict[str, Any],
+    fact_extractor: Any,
+) -> dict[str, AnalystSignal]:
+    """Shared LLM analyst execution pattern for macro analysts."""
+    system_prompt = analyst.philosophy + LLM_INSTRUCTION_SUFFIX
+    results: dict[str, AnalystSignal] = {}
+
+    for ticker in tickers:
+        data = market_data.get(ticker, {})
+        facts = fact_extractor(ticker, data)
+
+        meaningful_keys = [k for k, v in facts.items()
+                          if k not in ("ticker", "line_items", "note",
+                                       "news_data_available")
+                          and v is not None]
+        if not meaningful_keys:
+            results[ticker] = AnalystSignal(
+                signal="neutral", confidence=0,
+                reasoning=_pad("No financial data available"),
+            )
+            continue
+
+        user_prompt = f"Analyze {ticker}. Here are the financial facts:\n{json.dumps(facts, indent=2)}"
+        response = call_llm(system_prompt, user_prompt)
+        results[ticker] = _parse_llm_signal(response)
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Analyst classes
+# ---------------------------------------------------------------------------
 
 class DruckenmillerAnalyst(BaseAnalyst):
     """Stanley Druckenmiller-style macro analyst.
@@ -44,16 +277,7 @@ class DruckenmillerAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        """Analyze tickers through Druckenmiller's macro lens.
-
-        TODO: Implement LLM-augmented analysis:
-        - Assess current monetary policy stance and trajectory
-        - Evaluate liquidity conditions (M2, credit spreads, TED spread)
-        - Identify macro regime (risk-on/risk-off/transitional)
-        - Map ticker exposure to macro factors
-        - Size conviction based on regime clarity
-        """
-        raise NotImplementedError("DruckenmillerAnalyst.analyze() not yet implemented")
+        return _run_macro_analyst(self, tickers, market_data, _extract_druckenmiller_facts)
 
 
 class BurryAnalyst(BaseAnalyst):
@@ -88,16 +312,7 @@ class BurryAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        """Analyze tickers through Burry's contrarian lens.
-
-        TODO: Implement LLM-augmented analysis:
-        - Screen for structural disconnects (price vs fundamentals)
-        - Analyze 10-K footnotes and risk factor disclosures
-        - Identify asymmetric short opportunities
-        - Evaluate commodity/resource exposure
-        - Assess carry cost tolerance for early positions
-        """
-        raise NotImplementedError("BurryAnalyst.analyze() not yet implemented")
+        return _run_macro_analyst(self, tickers, market_data, _extract_burry_facts)
 
 
 class WoodAnalyst(BaseAnalyst):
@@ -132,16 +347,7 @@ class WoodAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        """Analyze tickers through Wood's disruption lens.
-
-        TODO: Implement LLM-augmented analysis:
-        - Map ticker to disruption platform(s)
-        - Model Wright's Law cost curve position
-        - Estimate 5-year TAM expansion trajectory
-        - Evaluate innovation pipeline and R&D efficiency
-        - Score disruption thesis strength and timeline
-        """
-        raise NotImplementedError("WoodAnalyst.analyze() not yet implemented")
+        return _run_macro_analyst(self, tickers, market_data, _extract_wood_facts)
 
 
 class LynchAnalyst(BaseAnalyst):
@@ -176,17 +382,7 @@ class LynchAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        """Analyze tickers using Lynch's categorization framework.
-
-        TODO: Implement LLM-augmented analysis:
-        - Categorize stock type (slow/stalwart/fast/cyclical/turnaround/asset)
-        - Compute PEG ratio with forward growth estimates
-        - Evaluate the 'story' clarity and simplicity
-        - Check balance sheet safety (debt/equity)
-        - Score insider buying patterns
-        - Apply category-appropriate valuation
-        """
-        raise NotImplementedError("LynchAnalyst.analyze() not yet implemented")
+        return _run_macro_analyst(self, tickers, market_data, _extract_lynch_facts)
 
 
 class AckmanAnalyst(BaseAnalyst):
@@ -221,16 +417,7 @@ class AckmanAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        """Analyze tickers using Ackman's activist value framework.
-
-        TODO: Implement LLM-augmented analysis:
-        - Identify potential catalysts (operational, strategic, financial)
-        - Evaluate business quality (FCF generation, barriers to entry)
-        - Score management capital allocation history
-        - Estimate intrinsic value and gap to market price
-        - Assess activist potential (governance, ownership structure)
-        """
-        raise NotImplementedError("AckmanAnalyst.analyze() not yet implemented")
+        return _run_macro_analyst(self, tickers, market_data, _extract_ackman_facts)
 
 
 class TalebAnalyst(BaseAnalyst):
@@ -266,17 +453,7 @@ class TalebAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        """Analyze tickers through Taleb's antifragility lens.
-
-        TODO: Implement LLM-augmented analysis:
-        - Score fragility (leverage, concentration, vol dependence)
-        - Identify antifragile characteristics
-        - Evaluate tail risk exposure (fat tail analysis)
-        - Assess payoff convexity profile
-        - Apply Lindy heuristic to business longevity
-        - Barbell classification (safe, speculative, or fragile middle)
-        """
-        raise NotImplementedError("TalebAnalyst.analyze() not yet implemented")
+        return _run_macro_analyst(self, tickers, market_data, _extract_taleb_facts)
 
 
 class NewsSentimentAnalyst(BaseAnalyst):
@@ -311,17 +488,32 @@ class NewsSentimentAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        """Analyze tickers using news sentiment interpretation.
+        """Return low-confidence neutral -- news data not available."""
+        results: dict[str, AnalystSignal] = {}
+        for ticker in tickers:
+            data = market_data.get(ticker, {})
+            facts = _extract_news_facts(ticker, data)
 
-        TODO: Implement LLM-augmented analysis:
-        - Retrieve recent news articles per ticker
-        - Analyze earnings call transcript sentiment
-        - Track analyst upgrade/downgrade flow
-        - Detect narrative inflection points
-        - Score sentiment extremes for contrarian signals
-        - Compute composite news sentiment -> signal
-        """
-        raise NotImplementedError("NewsSentimentAnalyst.analyze() not yet implemented")
+            # Still call LLM with what we have -- it can infer sentiment
+            # from financial trajectory, but will note data limitations
+            system_prompt = self.philosophy + LLM_INSTRUCTION_SUFFIX
+            user_prompt = (
+                f"Analyze {ticker}. Note: real-time news data is NOT available. "
+                f"You can only infer sentiment from financial metrics.\n"
+                f"{json.dumps(facts, indent=2)}"
+            )
+            response = call_llm(system_prompt, user_prompt)
+            signal = _parse_llm_signal(response)
+
+            # Cap confidence since we lack actual news data
+            capped_confidence = min(signal.confidence, 30)
+            results[ticker] = AnalystSignal(
+                signal=signal.signal,
+                confidence=capped_confidence,
+                reasoning=_pad(signal.reasoning.strip()),
+            )
+
+        return results
 
 
 MACRO_ANALYSTS: list[type[BaseAnalyst]] = [

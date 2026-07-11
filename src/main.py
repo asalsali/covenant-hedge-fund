@@ -72,9 +72,21 @@ def main(argv: list[str] | None = None) -> None:
     """Run the Covenant Hedge Fund."""
     args = parse_args(argv)
 
-    # --backtest deferred to Wave 4
     if args.backtest:
-        print("Backtest mode not yet implemented (deferred to Wave 4).")
+        from src.backtest import BacktestEngine
+
+        tickers = [t.upper() for t in args.tickers]
+        end_date = args.end_date or date.today()
+        start_date = args.start_date or _subtract_months(end_date, 3)
+
+        engine = BacktestEngine(
+            tickers=tickers,
+            start_date=start_date,
+            end_date=end_date,
+            initial_cash=args.initial_cash,
+            show_reasoning=args.show_reasoning,
+        )
+        engine.run()
         return
 
     # -------------------------------------------------------------------------
@@ -105,7 +117,7 @@ def main(argv: list[str] | None = None) -> None:
     # -------------------------------------------------------------------------
     # 2. Fetch market data
     # -------------------------------------------------------------------------
-    print("[1/5] Fetching market data...")
+    print("[1/8] Fetching market data...")
 
     LINE_ITEMS_TO_FETCH = [
         "revenue", "net_income", "free_cash_flow",
@@ -158,7 +170,7 @@ def main(argv: list[str] | None = None) -> None:
     # -------------------------------------------------------------------------
     # 3. Run quant analysts
     # -------------------------------------------------------------------------
-    print("[2/5] Running quant analysts...")
+    print("[2/8] Running quant analysts...")
 
     from src.agents.quant import QUANT_ANALYSTS
 
@@ -179,9 +191,53 @@ def main(argv: list[str] | None = None) -> None:
     print()
 
     # -------------------------------------------------------------------------
-    # 4. Risk calculations
+    # 4. Run value analysts (LLM-augmented)
     # -------------------------------------------------------------------------
-    print("[3/5] Computing risk metrics...")
+    print("[3/8] Running value analysts...")
+
+    from src.agents.value import VALUE_ANALYSTS
+
+    value_analysts = [AnalystClass() for AnalystClass in VALUE_ANALYSTS]
+    for analyst in value_analysts:
+        print(f"  Running {analyst.name}...", end=" ", flush=True)
+        results = analyst.analyze(active_tickers, market_data)
+        for ticker, signal in results.items():
+            if ticker not in all_signals:
+                all_signals[ticker] = {}
+            all_signals[ticker][analyst.name] = signal
+        print(f"done ({', '.join(f'{t}:{results[t].signal}' for t in active_tickers if t in results)})")
+
+    value_names = [a.name for a in value_analysts]
+    analyst_names.extend(value_names)
+    print(f"  Value analysts: {', '.join(value_names)}")
+    print()
+
+    # -------------------------------------------------------------------------
+    # 5. Run macro analysts (LLM-augmented)
+    # -------------------------------------------------------------------------
+    print("[4/8] Running macro analysts...")
+
+    from src.agents.macro import MACRO_ANALYSTS
+
+    macro_analysts = [AnalystClass() for AnalystClass in MACRO_ANALYSTS]
+    for analyst in macro_analysts:
+        print(f"  Running {analyst.name}...", end=" ", flush=True)
+        results = analyst.analyze(active_tickers, market_data)
+        for ticker, signal in results.items():
+            if ticker not in all_signals:
+                all_signals[ticker] = {}
+            all_signals[ticker][analyst.name] = signal
+        print(f"done ({', '.join(f'{t}:{results[t].signal}' for t in active_tickers if t in results)})")
+
+    macro_names = [a.name for a in macro_analysts]
+    analyst_names.extend(macro_names)
+    print(f"  Macro analysts: {', '.join(macro_names)}")
+    print()
+
+    # -------------------------------------------------------------------------
+    # 6. Risk calculations
+    # -------------------------------------------------------------------------
+    print("[5/8] Computing risk metrics...")
 
     from src.risk import (
         compute_volatility,
@@ -241,7 +297,7 @@ def main(argv: list[str] | None = None) -> None:
     # -------------------------------------------------------------------------
     # 5. Quorum check and confidence-weighted synthesis
     # -------------------------------------------------------------------------
-    print("[4/5] Synthesizing decisions...")
+    print("[6/8] Synthesizing decisions...")
 
     QUORUM_THRESHOLD = 3  # CF-COMP-021: minimum distinct non-neutral signals
     SCORE_THRESHOLD = 0.3  # Normalized score threshold for action
@@ -347,7 +403,7 @@ def main(argv: list[str] | None = None) -> None:
     # -------------------------------------------------------------------------
     # 6. Execute trades
     # -------------------------------------------------------------------------
-    print("[5/5] Executing trades...")
+    print("[7/8] Executing trades...")
 
     trades_executed: list[str] = []
 
@@ -406,8 +462,10 @@ def main(argv: list[str] | None = None) -> None:
     print()
 
     # -------------------------------------------------------------------------
-    # 7. Report
+    # 8. Report
     # -------------------------------------------------------------------------
+    print("[8/8] Generating report...")
+    print()
     print("=" * 70)
     print("ANALYSIS REPORT")
     print("=" * 70)

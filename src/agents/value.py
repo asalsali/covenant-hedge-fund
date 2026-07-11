@@ -7,10 +7,136 @@ prompts for LLM-based analysis of fundamental data.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from src.agents.base import BaseAnalyst
+from src.llm import LLM_INSTRUCTION_SUFFIX, call_llm
 from src.models import AnalystSignal
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _to_float(val: Any) -> float | None:
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _pad(text: str) -> str:
+    if len(text) < 20:
+        text = text + " " * (20 - len(text))
+    return text[:200]
+
+
+def _extract_value_facts(ticker: str, data: dict) -> dict:
+    """Extract common financial facts for value analysts."""
+    prices = data.get("prices", [])
+    metrics = data.get("financial_metrics", [])
+    line_items = data.get("line_items", [])
+
+    cur = metrics[0] if metrics else {}
+
+    # Current price
+    closes = [p["close"] for p in prices if p.get("close") is not None]
+    current_price = closes[-1] if closes else None
+    price_start = closes[0] if closes else None
+    price_change_pct = None
+    if current_price and price_start and price_start > 0:
+        price_change_pct = round((current_price / price_start - 1) * 100, 2)
+
+    # Line items (last 3 periods)
+    li_data = []
+    for li in line_items[:3]:
+        li_data.append({
+            "period": li.get("period_end_date") or li.get("report_period"),
+            "revenue": _to_float(li.get("revenue")),
+            "net_income": _to_float(li.get("net_income")),
+            "free_cash_flow": _to_float(li.get("free_cash_flow")),
+            "operating_cash_flow": _to_float(li.get("operating_cash_flow")),
+        })
+
+    return {
+        "ticker": ticker,
+        "current_price": current_price,
+        "price_change_pct": price_change_pct,
+        "return_on_equity": _to_float(cur.get("return_on_equity")),
+        "debt_to_equity": _to_float(cur.get("debt_to_equity")),
+        "current_ratio": _to_float(cur.get("current_ratio")),
+        "net_margin": _to_float(cur.get("net_margin")),
+        "gross_margin": _to_float(cur.get("gross_margin")),
+        "price_to_earnings": _to_float(cur.get("price_to_earnings")),
+        "ev_to_ebitda": _to_float(cur.get("ev_to_ebitda")),
+        "market_cap": _to_float(cur.get("market_cap")),
+        "earnings_growth": _to_float(cur.get("earnings_growth")),
+        "line_items": li_data,
+    }
+
+
+def _parse_llm_signal(response: str) -> AnalystSignal:
+    """Parse LLM JSON response into AnalystSignal."""
+    try:
+        # Strip markdown code fences if present
+        text = response.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            text = "\n".join(lines).strip()
+
+        parsed = json.loads(text)
+        signal = parsed.get("signal", "neutral")
+        if signal not in ("bullish", "bearish", "neutral"):
+            signal = "neutral"
+        confidence = max(0, min(100, int(parsed.get("confidence", 0))))
+        reasoning = str(parsed.get("reasoning", "LLM analysis"))
+        return AnalystSignal(
+            signal=signal,
+            confidence=confidence,
+            reasoning=_pad(reasoning),
+        )
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return AnalystSignal(
+            signal="neutral",
+            confidence=0,
+            reasoning=_pad("Failed to parse LLM response"),
+        )
+
+
+def _run_llm_analyst(
+    analyst: BaseAnalyst,
+    tickers: list[str],
+    market_data: dict[str, Any],
+    fact_extractor: Any = None,
+) -> dict[str, AnalystSignal]:
+    """Shared LLM analyst execution pattern."""
+    extractor = fact_extractor or _extract_value_facts
+    system_prompt = analyst.philosophy + LLM_INSTRUCTION_SUFFIX
+    results: dict[str, AnalystSignal] = {}
+
+    for ticker in tickers:
+        data = market_data.get(ticker, {})
+        facts = extractor(ticker, data)
+
+        # Check if we have any meaningful data
+        meaningful_keys = [k for k, v in facts.items()
+                          if k not in ("ticker", "line_items") and v is not None]
+        if not meaningful_keys:
+            results[ticker] = AnalystSignal(
+                signal="neutral", confidence=0,
+                reasoning=_pad("No financial data available"),
+            )
+            continue
+
+        user_prompt = f"Analyze {ticker}. Here are the financial facts:\n{json.dumps(facts, indent=2)}"
+        response = call_llm(system_prompt, user_prompt)
+        results[ticker] = _parse_llm_signal(response)
+
+    return results
 
 
 class BuffettAnalyst(BaseAnalyst):
@@ -44,16 +170,7 @@ class BuffettAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        """Analyze tickers using Buffett's value investing framework.
-
-        TODO: Implement LLM-augmented analysis:
-        - Feed financial statements and moat indicators to LLM
-        - Evaluate circle of competence fit
-        - Compute intrinsic value via owner earnings model
-        - Assess management quality from proxy statements and letters
-        - Calculate margin of safety relative to current price
-        """
-        raise NotImplementedError("BuffettAnalyst.analyze() not yet implemented")
+        return _run_llm_analyst(self, tickers, market_data)
 
 
 class GrahamAnalyst(BaseAnalyst):
@@ -87,17 +204,7 @@ class GrahamAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        """Analyze tickers using Graham's defensive screens.
-
-        TODO: Implement LLM-augmented analysis:
-        - Screen 10-year earnings history for stability
-        - Verify 20-year dividend record
-        - Calculate 10-year earnings growth using 3-year averages
-        - Check current ratio and debt levels
-        - Compute Graham Number (sqrt(22.5 * EPS * BVPS))
-        - Pass/fail each criterion with binary scoring
-        """
-        raise NotImplementedError("GrahamAnalyst.analyze() not yet implemented")
+        return _run_llm_analyst(self, tickers, market_data)
 
 
 class MungerAnalyst(BaseAnalyst):
@@ -132,16 +239,7 @@ class MungerAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        """Analyze tickers using Munger's multi-disciplinary framework.
-
-        TODO: Implement LLM-augmented analysis:
-        - Apply checklist of mental models to each business
-        - Inversion analysis: identify top failure modes
-        - Evaluate management integrity signals
-        - Assess business model simplicity
-        - Check for competitive advantage durability across lenses
-        """
-        raise NotImplementedError("MungerAnalyst.analyze() not yet implemented")
+        return _run_llm_analyst(self, tickers, market_data)
 
 
 class PabraiAnalyst(BaseAnalyst):
@@ -175,16 +273,7 @@ class PabraiAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        """Analyze tickers using Pabrai's Dhandho framework.
-
-        TODO: Implement LLM-augmented analysis:
-        - Assess downside scenario and maximum capital loss
-        - Evaluate uncertainty vs risk distinction
-        - Calculate asymmetry ratio (upside/downside)
-        - Check for proven business model with temporary distress
-        - Score conviction level for concentration suitability
-        """
-        raise NotImplementedError("PabraiAnalyst.analyze() not yet implemented")
+        return _run_llm_analyst(self, tickers, market_data)
 
 
 class FisherAnalyst(BaseAnalyst):
@@ -219,16 +308,7 @@ class FisherAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        """Analyze tickers using Fisher's scuttlebutt method.
-
-        TODO: Implement LLM-augmented analysis:
-        - Evaluate R&D spending efficiency (R&D-to-revenue trends)
-        - Assess sales organization from revenue growth consistency
-        - Analyze profit margin trajectory and sustainability
-        - Score management depth from executive tenure data
-        - Synthesize qualitative growth assessment
-        """
-        raise NotImplementedError("FisherAnalyst.analyze() not yet implemented")
+        return _run_llm_analyst(self, tickers, market_data)
 
 
 class DamodaranAnalyst(BaseAnalyst):
@@ -264,17 +344,7 @@ class DamodaranAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        """Analyze tickers using Damodaran's valuation framework.
-
-        TODO: Implement LLM-augmented analysis:
-        - Build DCF model with explicit FCFF/FCFE estimation
-        - Compute WACC from current market data
-        - Decompose growth (reinvestment rate * ROIC)
-        - Run scenario analysis with risk-adjusted discount rates
-        - Cross-check with relative valuation (EV/EBITDA, P/E peers)
-        - Classify business life-cycle stage
-        """
-        raise NotImplementedError("DamodaranAnalyst.analyze() not yet implemented")
+        return _run_llm_analyst(self, tickers, market_data)
 
 
 VALUE_ANALYSTS: list[type[BaseAnalyst]] = [
