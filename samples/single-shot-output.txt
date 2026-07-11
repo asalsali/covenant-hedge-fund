@@ -1,44 +1,49 @@
 ======================================================================
 COVENANT HEDGE FUND -- Analysis Run
 ======================================================================
-  Tickers:    AAPL, MSFT, GOOGL, AMZN, NVDA, JPM, JNJ, XOM
-  Date range: 2026-04-12 to 2026-07-11
+  Tickers:    AAPL, MSFT, NVDA
+  Date range: 2026-04-11 to 2026-07-11
   Cash:       $100,000.00
 
 [1/8] Fetching market data...
   AAPL: 62 price bars, 5 metric periods, 50 insider trades
-  MSFT: 62 price bars, 5 metric periods, 50 insider trades
-  GOOGL: 62 price bars, 5 metric periods, 42 insider trades
-  AMZN: 62 price bars, 4 metric periods, 50 insider trades
+  MSFT: 62 price bars, 4 metric periods, 50 insider trades
   NVDA: 62 price bars, 5 metric periods, 50 insider trades
-  JPM: 62 price bars, 5 metric periods, 24 insider trades
-  JNJ: 62 price bars, 5 metric periods, 50 insider trades
-  XOM: 62 price bars, 5 metric periods, 50 insider trades
 
 [2/8] Running quant analysts...
   Analysts: technicals, fundamentals, valuation, growth, sentiment
-  Signals collected for 8 tickers
+  Signals collected for 3 tickers
+
+[3/8] Running value analysts...
+  Running buffett... done (AAPL:bullish, MSFT:bullish, NVDA:neutral)
+  Running graham... done (AAPL:bearish, MSFT:neutral, NVDA:bearish)
+  Running munger... done (AAPL:bullish, MSFT:bullish, NVDA:neutral)
+  Running pabrai... done (AAPL:bullish, MSFT:bullish, NVDA:neutral)
+  Running fisher... done (AAPL:bullish, MSFT:bullish, NVDA:bullish)
+  Running damodaran... done (AAPL:bullish, MSFT:bullish, NVDA:bullish)
+  Value analysts: buffett, graham, munger, pabrai, fisher, damodaran
+
+[4/8] Running macro analysts...
+  Running druckenmiller... done (AAPL:bullish, MSFT:neutral, NVDA:bullish)
+  Running burry... done (AAPL:bearish, MSFT:bearish, NVDA:bearish)
+  Running wood... done (AAPL:bullish, MSFT:bullish, NVDA:bullish)
+  Running lynch... done (AAPL:neutral, MSFT:bullish, NVDA:neutral)
+  Running ackman... done (AAPL:bullish, MSFT:bullish, NVDA:bullish)
+  Running taleb... done (AAPL:bullish, MSFT:neutral, NVDA:bullish)
+  Running news_sentiment... done (AAPL:bullish, MSFT:bullish, NVDA:bullish)
+  Macro analysts: druckenmiller, burry, wood, lynch, ackman, taleb, news_sentiment
 
 [5/8] Computing risk metrics...
-  Avg correlation: 0.0235 (multiplier: 1.10)
-  AAPL: vol=28.55% (medium), limit=$16,500
-  MSFT: vol=35.45% (high), limit=$11,000
-  GOOGL: vol=37.44% (high), limit=$10,450
-  AMZN: vol=38.33% (high), limit=$10,175
-  NVDA: vol=40.49% (high), limit=$9,625
-  JPM: vol=22.56% (medium), limit=$18,975
-  JNJ: vol=24.35% (medium), limit=$17,875
-  XOM: vol=27.38% (medium), limit=$17,050
+  Avg correlation: 0.2041 (multiplier: 1.05)
+  AAPL: vol=28.55% (medium), limit=$16,258
+  MSFT: vol=35.20% (high), limit=$14,385
+  NVDA: vol=40.49% (high), limit=$12,997
 
 [6/8] Synthesizing decisions...
-
 [7/8] Executing trades...
   BUY      25 AAPL @ $315.32 ($7,883.00)
   BUY      18 MSFT @ $385.10 ($6,931.80)
-  BUY      27 GOOGL @ $268.01 ($7,236.27)
-  BUY      20 AMZN @ $303.93 ($6,078.60)
-  BUY      69 JPM @ $197.15 ($13,603.35)
-  SHORT    28 XOM @ $112.91 ($3,161.48)
+  BUY      30 NVDA @ $210.96 ($6,328.80)
 
 [8/8] Generating report...
 
@@ -47,69 +52,90 @@ ANALYSIS REPORT
 ======================================================================
 
 --- AAPL ---
-  Signals: technicals:-11 | fundamentals:+28 | valuation:-77 | growth:+48 | sentiment:+90
-  Risk: vol=28.55% (medium), limit=$16,500
-  Decision: BUY 25 shares (score=+0.31)
-  Reasoning: Bullish consensus (score=+0.31)
+  Signals: technicals:-11 | fundamentals:+28 | valuation:-77 | growth:+48 | sentiment:+90 | buffett:+75 | graham:-75 | munger:+75 | pabrai:+75 | fisher:+85 | damodaran:+75 | druckenmiller:+85 | burry:-75 | wood:+75 | lynch:=60 | ackman:+85 | taleb:+82 | news_sentiment:+30
+    technicals: RSI 62, composite=-0.18
+    fundamentals: ROE 141% strong (6/6 metrics)
+    valuation: P/E 38.2 rich (5/5 metrics)
+    growth: Margins +2.9% (4/4 factors)
+    sentiment: Insider buy ratio 100% (24B/0S)
+    buffett: AAPL shows strong financials with high ROE and consistent FCF generation. Brand power and network effects provide durable competitive moats.
+    graham: AAPL fails the P/E ratio and Graham Number criteria.
+    munger: AAPL has strong financial health, high ROE, and consistent growth in revenue and free cash flow.
+    pabrai: AAPL shows strong financial health and growth potential with high ROE and positive cash flows, despite high P/E. Upside from earnings growth is substantial.
+    fisher: AAPL shows strong financial health with high ROE, low debt, and consistent growth in revenue and net income.
+    damodaran: AAPL shows strong growth and healthy financials; DCF suggests value above current price.
+    druckenmiller: AAPL shows strong fundamentals with high ROE and growing earnings. Recent price increase and positive liquidity flows support a bullish stance.
+    burry: AAPL's valuation is high with P/E at 38.17 and EV/EBITDA at 29.05, while earnings growth is slowing.
+    wood: AAPL shows strong revenue growth and innovation in tech platforms, with a large market cap and solid financial health.
+    lynch: AAPL has a PEG ratio above 1.0 and is categorized as a fast grower but faces valuation challenges.
+    ackman: AAPL shows strong financial health with high ROE and FCF yield. Catalysts include revenue growth and potential for buybacks/dividends.
+    taleb: AAPL shows strong financial health with high ROE and low leverage. Volatility is moderate, favoring antifragility in disorderly markets.
+    news_sentiment: Strong earnings growth and healthy financial ratios suggest continued market optimism.
+  Risk: vol=28.55% (medium), limit=$16,258
+  Decision: BUY 25 shares (score=+0.56)
+  Reasoning: Bullish consensus (score=+0.56)
 
 --- MSFT ---
-  Signals: technicals:=1 | fundamentals:+35 | valuation:-46 | growth:+33 | sentiment:+90
-  Risk: vol=35.45% (high), limit=$11,000
-  Decision: BUY 18 shares (score=+0.55)
-  Reasoning: Bullish consensus (score=+0.55)
-
---- GOOGL ---
-  Signals: technicals:-18 | fundamentals:+40 | valuation:-52 | growth:+33 | sentiment:+63
-  Risk: vol=37.44% (high), limit=$10,450
-  Decision: BUY 27 shares (score=+0.38)
-  Reasoning: Bullish consensus (score=+0.38)
-
---- AMZN ---
-  Signals: technicals:-3 | fundamentals:+31 | valuation:-80 | growth:+48 | sentiment:+90
-  Risk: vol=38.33% (high), limit=$10,175
-  Decision: BUY 20 shares (score=+0.36)
-  Reasoning: Bullish consensus (score=+0.36)
+  Signals: technicals:=1 | fundamentals:+35 | valuation:-46 | growth:+33 | sentiment:+90 | buffett:+85 | graham:=65 | munger:+85 | pabrai:+85 | fisher:+85 | damodaran:+85 | druckenmiller:=70 | burry:-75 | wood:+75 | lynch:+85 | ackman:+85 | taleb:=55 | news_sentiment:+30
+    technicals: RSI 53, composite=+0.02
+    fundamentals: ROE 34% strong (6/6 metrics)
+    valuation: EV/EBITDA 15.8 (5/5 metrics)
+    growth: Mixed growth (4/4 factors)
+    sentiment: Insider buy ratio 100% (50B/0S)
+    buffett: MSFT has strong ROE, low debt, high margins, and consistent FCF generation. Future growth in cloud services is promising.
+    graham: MSFT fails earnings growth and P/E ratio criteria.
+    munger: MSFT has strong ROE, healthy margins, and consistent growth in revenue and free cash flow.
+    pabrai: MSFT shows strong ROE, healthy margins, and consistent growth. Current price seems undervalued given its financials and long-term potential.
+    fisher: Microsoft shows strong earnings growth, healthy margins, and consistent cash flow generation.
+    damodaran: MSFT shows strong growth in free cash flow and earnings, with a healthy return on equity and low debt-to-equity ratio.
+    druckenmiller: MSFT shows strong fundamentals but current price is near SMA-50, indicating a potential pullback.
+    burry: MSFT shows signs of margin compression and a potential overvaluation given the high P/E ratio. The market may be pricing in future growth that is unlikely given current trends.
+    wood: MSFT shows strong revenue growth and innovation in tech platforms like AI and cloud, with a large TAM.
+    lynch: MSFT is a fast grower with a PEG ratio below 1.0 and strong financial health.
+    ackman: Microsoft has strong free cash flow generation and a clear path to growth with robust earnings and revenue forecasts. Insider buying indicates management confidence.
+    taleb: MSFT shows strong financial health with high ROE and low debt. However, its revenue concentration and high volatility make it neither clearly antifragile nor fragile.
+    news_sentiment: Strong growth in revenue and net income, improving margins, and robust cash flows suggest a healthy business.
+  Risk: vol=35.20% (high), limit=$14,385
+  Decision: BUY 18 shares (score=+0.63)
+  Reasoning: Bullish consensus (score=+0.63)
 
 --- NVDA ---
-  Signals: technicals:+14 | fundamentals:+42 | valuation:-83 | growth:+19 | sentiment:+90
-  Risk: vol=40.49% (high), limit=$9,625
-  Decision: HOLD 0 shares (score=+0.28)
-  Reasoning: Score within threshold (score=+0.28)
-
---- JPM ---
-  Signals: technicals:+54 | fundamentals:+28 | valuation:+33 | growth:+25 | sentiment:+45
-  Risk: vol=22.56% (medium), limit=$18,975
-  Decision: BUY 69 shares (score=+0.82)
-  Reasoning: Bullish consensus (score=+0.82)
-
---- JNJ ---
-  Signals: technicals:+21 | fundamentals:+10 | valuation:+44 | growth:-15 | sentiment:+59
-  Risk: vol=24.35% (medium), limit=$17,875
-  Decision: HOLD 0 shares (score=+0.29)
-  Reasoning: Score within threshold (score=+0.29)
-
---- XOM ---
-  Signals: technicals:-30 | fundamentals:+25 | valuation:-10 | growth:-51 | sentiment:+30
-  Risk: vol=27.38% (medium), limit=$17,050
-  Decision: SHORT 28 shares (score=-0.31)
-  Reasoning: Bearish consensus (score=-0.31)
+  Signals: technicals:=9 | fundamentals:+42 | valuation:-83 | growth:+19 | sentiment:+90 | buffett:=55 | graham:-85 | munger:=55 | pabrai:=55 | fisher:+85 | damodaran:+85 | druckenmiller:+85 | burry:-75 | wood:+85 | lynch:=65 | ackman:+85 | taleb:+75 | news_sentiment:+30
+    technicals: RSI 50, composite=-0.15
+    fundamentals: ROE 114% strong (6/6 metrics)
+    valuation: P/E 32.3 rich (5/5 metrics)
+    growth: Rev CAGR 100% (4/4 factors)
+    sentiment: Insider buy ratio 100% (50B/0S)
+    buffett: NVDA shows strong financials with high ROE and low debt, but its valuation is stretched given the P/E ratio.
+    graham: NVDA fails the P/E and Graham Number criteria with a P/E of 32.26 and a combined ratio of 40.34.
+    munger: NVDA shows strong financial health and growth but its valuation is high. Management integrity seems intact, but the business model complexity might be a concern.
+    pabrai: NVDA shows strong financials but high P/E and EV/EBITDA ratios suggest potential for price volatility; downside limited due to proven model.
+    fisher: NVDA shows strong financial health with high ROE and low debt. Revenue growth is consistent, and margins are robust.
+    damodaran: NVDA shows strong growth in free cash flow and earnings, with a low debt-to-equity ratio, indicating robust financial health.
+    druckenmiller: NVDA shows strong fundamentals with high ROE and growing margins. Revenue growth forecasts support bullish outlook.
+    burry: NVDA shows margin compression and high P/E despite growing earnings. Structural risks in tech valuations warrant caution.
+    wood: NVDA shows strong revenue growth and high innovation proxy earnings growth, aligning with disruptive tech trends.
+    lynch: NVDA has a high PEG ratio and lacks compelling valuation despite being a fast grower.
+    ackman: NVDA shows strong financial health with high ROE and low debt. Future revenue growth and significant FCF indicate value realization potential.
+    taleb: NVDA shows strong financial health with high ROE and low debt. High earnings growth and positive volatility suggest antifragility in disorder.
+    news_sentiment: Strong ROE and consistent revenue growth suggest NVDA is performing well.
+  Risk: vol=40.49% (high), limit=$12,997
+  Decision: BUY 30 shares (score=+0.38)
+  Reasoning: Bullish consensus (score=+0.38)
 
 ----------------------------------------------------------------------
 PORTFOLIO STATE
 ----------------------------------------------------------------------
-  Cash:          $55,106.50
-  Margin used:   $1,580.74
+  Cash:          $78,856.40
+  Margin used:   $0.00
   Portfolio val:  $100,000.00
   Return:         +0.00%
 
   Positions:
     AAPL LONG: 25 shares @ $315.32 (mkt $7,883.00, P&L $+0.00)
     MSFT LONG: 18 shares @ $385.10 (mkt $6,931.80, P&L $+0.00)
-    GOOGL LONG: 27 shares @ $268.01 (mkt $7,236.27, P&L $+0.00)
-    AMZN LONG: 20 shares @ $303.93 (mkt $6,078.60, P&L $+0.00)
-    JPM LONG: 69 shares @ $197.15 (mkt $13,603.35, P&L $+0.00)
-    XOM SHORT: 28 shares @ $112.91 (mkt $3,161.48, P&L $+0.00)
+    NVDA LONG: 30 shares @ $210.96 (mkt $6,328.80, P&L $+0.00)
 
-  Trades executed: 6
+  Trades executed: 3
 
 ======================================================================
