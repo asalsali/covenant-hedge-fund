@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import date
+from datetime import date, timedelta
+from typing import Any
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -53,35 +54,437 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _subtract_months(d: date, months: int) -> date:
+    """Subtract months from a date, handling edge cases."""
+    month = d.month - months
+    year = d.year
+    while month <= 0:
+        month += 12
+        year -= 1
+    # Clamp day to valid range for target month
+    import calendar
+    max_day = calendar.monthrange(year, month)[1]
+    day = min(d.day, max_day)
+    return date(year, month, day)
+
+
 def main(argv: list[str] | None = None) -> None:
     """Run the Covenant Hedge Fund."""
     args = parse_args(argv)
 
+    # --backtest deferred to Wave 4
+    if args.backtest:
+        print("Backtest mode not yet implemented (deferred to Wave 4).")
+        return
+
+    # -------------------------------------------------------------------------
+    # 1. Initialize
+    # -------------------------------------------------------------------------
     tickers = [t.upper() for t in args.tickers]
-    end = args.end_date or date.today()
-    start = args.start_date or date(end.year, end.month - 3, end.day)
+    end_date = args.end_date or date.today()
+    start_date = args.start_date or _subtract_months(end_date, 3)
 
-    print("Covenant Hedge Fund initialized.")
+    print("=" * 70)
+    print("COVENANT HEDGE FUND -- Analysis Run")
+    print("=" * 70)
     print(f"  Tickers:    {', '.join(tickers)}")
-    print(f"  Date range: {start} to {end}")
+    print(f"  Date range: {start_date} to {end_date}")
     print(f"  Cash:       ${args.initial_cash:,.2f}")
-    print(f"  Mode:       {'backtest' if args.backtest else 'analysis'}")
     print()
 
-    # TODO: Initialize portfolio state
-    # TODO: Spawn epoch containers (value, quant, macro)
-    # TODO: Spawn analyst agents within each epoch container
-    # TODO: Collect analyst memos
-    # TODO: Apply COMPLIANCE.md risk rules
-    # TODO: Make portfolio decisions
-    # TODO: Write exit report with decision graph
+    # CF-COMP-030: clear data cache at start of each run
+    from src.data.api import (
+        get_prices,
+        get_financial_metrics,
+        get_insider_trades,
+        search_line_items,
+        clear_cache,
+    )
+    clear_cache()
 
-    print("Spawning analysts...")
-    print("  Value domain:  Buffett, Graham, Munger, Pabrai, Fisher, Damodaran")
-    print("  Quant domain:  Technicals, Fundamentals, Valuation, Growth, Sentiment")
-    print("  Macro domain:  Druckenmiller, Burry, Wood, Lynch, Ackman, Taleb, News Sentiment")
+    # -------------------------------------------------------------------------
+    # 2. Fetch market data
+    # -------------------------------------------------------------------------
+    print("[1/5] Fetching market data...")
+
+    LINE_ITEMS_TO_FETCH = [
+        "revenue", "net_income", "free_cash_flow",
+        "operating_cash_flow", "outstanding_shares",
+    ]
+
+    market_data: dict[str, dict[str, Any]] = {}
+    failed_tickers: list[str] = []
+
+    for ticker in tickers:
+        try:
+            prices = get_prices(ticker, start_date, end_date)
+            if not prices:
+                print(f"  WARNING: No price data for {ticker}, skipping.")
+                failed_tickers.append(ticker)
+                continue
+
+            financial_metrics = get_financial_metrics(
+                ticker, end_date, period="annual", limit=5,
+            )
+            insider_trades = get_insider_trades(ticker, end_date)
+            line_items = search_line_items(
+                ticker, LINE_ITEMS_TO_FETCH, end_date,
+                period="annual", limit=5,
+            )
+
+            market_data[ticker] = {
+                "prices": prices,
+                "financial_metrics": financial_metrics,
+                "insider_trades": insider_trades,
+                "line_items": line_items,
+            }
+            print(f"  {ticker}: {len(prices)} price bars, "
+                  f"{len(financial_metrics)} metric periods, "
+                  f"{len(insider_trades)} insider trades")
+
+        except Exception as e:
+            print(f"  WARNING: Failed to fetch data for {ticker}: {e}")
+            failed_tickers.append(ticker)
+
+    # Remove failed tickers from the active list
+    active_tickers = [t for t in tickers if t not in failed_tickers]
+
+    if not active_tickers:
+        print("\nERROR: No valid market data for any ticker. Aborting.")
+        return
+
     print()
-    print("[placeholder -- analyst execution not yet implemented]")
+
+    # -------------------------------------------------------------------------
+    # 3. Run quant analysts
+    # -------------------------------------------------------------------------
+    print("[2/5] Running quant analysts...")
+
+    from src.agents.quant import QUANT_ANALYSTS
+
+    analysts = [AnalystClass() for AnalystClass in QUANT_ANALYSTS]
+    all_signals: dict[str, dict[str, Any]] = {}
+    # all_signals[ticker][analyst_name] = AnalystSignal
+
+    for analyst in analysts:
+        results = analyst.analyze(active_tickers, market_data)
+        for ticker, signal in results.items():
+            if ticker not in all_signals:
+                all_signals[ticker] = {}
+            all_signals[ticker][analyst.name] = signal
+
+    analyst_names = [a.name for a in analysts]
+    print(f"  Analysts: {', '.join(analyst_names)}")
+    print(f"  Signals collected for {len(all_signals)} tickers")
+    print()
+
+    # -------------------------------------------------------------------------
+    # 4. Risk calculations
+    # -------------------------------------------------------------------------
+    print("[3/5] Computing risk metrics...")
+
+    from src.risk import (
+        compute_volatility,
+        compute_correlation,
+        compute_position_limit,
+        compute_allowed_actions,
+    )
+    from src.portfolio import Portfolio
+    from src.models import PortfolioState
+
+    # Build prices_dict: {ticker: [list of close prices]}
+    prices_dict: dict[str, list[float]] = {}
+    current_prices: dict[str, float] = {}
+    for ticker in active_tickers:
+        closes = [
+            p["close"] for p in market_data[ticker]["prices"]
+            if p.get("close") is not None
+        ]
+        if closes:
+            prices_dict[ticker] = closes
+            current_prices[ticker] = closes[-1]
+
+    vol_metrics = compute_volatility(prices_dict)
+    corr_metrics = compute_correlation(prices_dict)
+
+    # Initialize portfolio
+    portfolio = Portfolio(initial_cash=args.initial_cash)
+    portfolio_value = args.initial_cash
+
+    # Compute position limits and allowed actions
+    position_limits: dict[str, Any] = {}
+    allowed_actions: dict[str, list[str]] = {}
+
+    for ticker in active_tickers:
+        if ticker not in vol_metrics:
+            continue
+        limit = compute_position_limit(
+            ticker, portfolio_value, vol_metrics[ticker], corr_metrics,
+        )
+        position_limits[ticker] = limit
+        allowed = compute_allowed_actions(
+            ticker, portfolio.state, limit, current_prices.get(ticker, 0),
+        )
+        allowed_actions[ticker] = allowed
+
+    print(f"  Avg correlation: {corr_metrics.avg_correlation:.4f} "
+          f"(multiplier: {corr_metrics.multiplier:.2f})")
+    for ticker in active_tickers:
+        if ticker in vol_metrics:
+            vm = vol_metrics[ticker]
+            pl = position_limits.get(ticker)
+            max_n = f"${pl.max_notional:,.0f}" if pl else "N/A"
+            print(f"  {ticker}: vol={vm.annualized_vol:.2%} ({vm.tier}), "
+                  f"limit={max_n}")
+    print()
+
+    # -------------------------------------------------------------------------
+    # 5. Quorum check and confidence-weighted synthesis
+    # -------------------------------------------------------------------------
+    print("[4/5] Synthesizing decisions...")
+
+    QUORUM_THRESHOLD = 3  # CF-COMP-021: minimum distinct non-neutral signals
+    SCORE_THRESHOLD = 0.3  # Normalized score threshold for action
+
+    decisions: dict[str, dict[str, Any]] = {}
+
+    for ticker in active_tickers:
+        signals = all_signals.get(ticker, {})
+
+        # Collect non-neutral signals for quorum check
+        non_neutral = [
+            (name, sig) for name, sig in signals.items()
+            if sig.signal != "neutral"
+        ]
+
+        if len(non_neutral) < QUORUM_THRESHOLD:
+            decisions[ticker] = {
+                "action": "hold",
+                "quantity": 0,
+                "reasoning": (f"Quorum not met: {len(non_neutral)}/{QUORUM_THRESHOLD} "
+                              f"non-neutral signals"),
+                "weighted_score": 0.0,
+            }
+            continue
+
+        # Confidence-weighted majority vote
+        weighted_sum = 0.0
+        confidence_sum = 0.0
+
+        for name, sig in signals.items():
+            direction = 0.0
+            if sig.signal == "bullish":
+                direction = 1.0
+            elif sig.signal == "bearish":
+                direction = -1.0
+            # neutral contributes 0
+
+            conf = sig.confidence / 100.0  # normalize to 0-1
+            weighted_sum += conf * direction
+            confidence_sum += conf
+
+        normalized_score = weighted_sum / confidence_sum if confidence_sum > 0 else 0.0
+
+        # Determine action
+        allowed = allowed_actions.get(ticker, ["hold"])
+        price = current_prices.get(ticker, 0)
+
+        if normalized_score > SCORE_THRESHOLD and "buy" in allowed:
+            # Buy: 50% of position limit on first entry
+            pl = position_limits.get(ticker)
+            if pl and price > 0:
+                target_notional = pl.max_notional * 0.5
+                quantity = int(target_notional / price)
+                quantity = max(1, quantity)
+            else:
+                quantity = 0
+            decisions[ticker] = {
+                "action": "buy",
+                "quantity": quantity,
+                "reasoning": f"Bullish consensus (score={normalized_score:+.2f})",
+                "weighted_score": normalized_score,
+            }
+        elif normalized_score < -SCORE_THRESHOLD:
+            if "sell" in allowed:
+                pos = portfolio.state.positions.get(ticker)
+                quantity = pos.long_shares if pos else 0
+                decisions[ticker] = {
+                    "action": "sell",
+                    "quantity": quantity,
+                    "reasoning": f"Bearish consensus (score={normalized_score:+.2f})",
+                    "weighted_score": normalized_score,
+                }
+            elif "short" in allowed:
+                pl = position_limits.get(ticker)
+                if pl and price > 0:
+                    target_notional = pl.max_notional * 0.5
+                    quantity = int(target_notional / price)
+                    quantity = max(1, quantity)
+                else:
+                    quantity = 0
+                decisions[ticker] = {
+                    "action": "short",
+                    "quantity": quantity,
+                    "reasoning": f"Bearish consensus (score={normalized_score:+.2f})",
+                    "weighted_score": normalized_score,
+                }
+            else:
+                decisions[ticker] = {
+                    "action": "hold",
+                    "quantity": 0,
+                    "reasoning": (f"Bearish (score={normalized_score:+.2f}) "
+                                  f"but no sell/short allowed"),
+                    "weighted_score": normalized_score,
+                }
+        else:
+            decisions[ticker] = {
+                "action": "hold",
+                "quantity": 0,
+                "reasoning": f"Score within threshold (score={normalized_score:+.2f})",
+                "weighted_score": normalized_score,
+            }
+
+    # -------------------------------------------------------------------------
+    # 6. Execute trades
+    # -------------------------------------------------------------------------
+    print("[5/5] Executing trades...")
+
+    trades_executed: list[str] = []
+
+    for ticker in active_tickers:
+        dec = decisions.get(ticker)
+        if not dec or dec["action"] == "hold" or dec["quantity"] == 0:
+            continue
+
+        price = current_prices.get(ticker, 0)
+        if price <= 0:
+            continue
+
+        try:
+            if dec["action"] == "buy":
+                portfolio.execute_buy(
+                    ticker, dec["quantity"], price, reasoning=dec["reasoning"],
+                )
+                trades_executed.append(
+                    f"  BUY  {dec['quantity']:>6} {ticker} @ ${price:.2f} "
+                    f"(${dec['quantity'] * price:,.2f})"
+                )
+            elif dec["action"] == "sell":
+                portfolio.execute_sell(
+                    ticker, dec["quantity"], price, reasoning=dec["reasoning"],
+                )
+                trades_executed.append(
+                    f"  SELL {dec['quantity']:>6} {ticker} @ ${price:.2f} "
+                    f"(${dec['quantity'] * price:,.2f})"
+                )
+            elif dec["action"] == "short":
+                portfolio.execute_short(
+                    ticker, dec["quantity"], price, reasoning=dec["reasoning"],
+                )
+                trades_executed.append(
+                    f"  SHORT {dec['quantity']:>5} {ticker} @ ${price:.2f} "
+                    f"(${dec['quantity'] * price:,.2f})"
+                )
+            elif dec["action"] == "cover":
+                portfolio.execute_cover(
+                    ticker, dec["quantity"], price, reasoning=dec["reasoning"],
+                )
+                trades_executed.append(
+                    f"  COVER {dec['quantity']:>5} {ticker} @ ${price:.2f} "
+                    f"(${dec['quantity'] * price:,.2f})"
+                )
+        except ValueError as e:
+            print(f"  WARNING: Trade failed for {ticker}: {e}")
+            decisions[ticker]["action"] = "hold"
+            decisions[ticker]["reasoning"] += f" [FAILED: {e}]"
+
+    if trades_executed:
+        for t in trades_executed:
+            print(t)
+    else:
+        print("  No trades executed.")
+    print()
+
+    # -------------------------------------------------------------------------
+    # 7. Report
+    # -------------------------------------------------------------------------
+    print("=" * 70)
+    print("ANALYSIS REPORT")
+    print("=" * 70)
+    print()
+
+    for ticker in active_tickers:
+        print(f"--- {ticker} ---")
+        signals = all_signals.get(ticker, {})
+        dec = decisions.get(ticker, {})
+
+        # Signals summary
+        signal_parts = []
+        for name in analyst_names:
+            sig = signals.get(name)
+            if sig:
+                arrow = {"bullish": "+", "bearish": "-", "neutral": "="}[sig.signal]
+                signal_parts.append(f"{name}:{arrow}{sig.confidence}")
+        print(f"  Signals: {' | '.join(signal_parts)}")
+
+        if args.show_reasoning:
+            for name in analyst_names:
+                sig = signals.get(name)
+                if sig:
+                    print(f"    {name}: {sig.reasoning.strip()}")
+
+        # Risk
+        if ticker in vol_metrics:
+            vm = vol_metrics[ticker]
+            pl = position_limits.get(ticker)
+            if pl:
+                print(f"  Risk: vol={vm.annualized_vol:.2%} ({vm.tier}), "
+                      f"limit=${pl.max_notional:,.0f}")
+
+        # Decision
+        action = dec.get("action", "hold")
+        qty = dec.get("quantity", 0)
+        score = dec.get("weighted_score", 0)
+        reasoning = dec.get("reasoning", "")
+        print(f"  Decision: {action.upper()} {qty} shares "
+              f"(score={score:+.2f})")
+        print(f"  Reasoning: {reasoning}")
+        print()
+
+    # Portfolio state
+    print("-" * 70)
+    print("PORTFOLIO STATE")
+    print("-" * 70)
+    final_value = portfolio.compute_portfolio_value(current_prices)
+    print(f"  Cash:          ${portfolio.state.cash:,.2f}")
+    print(f"  Margin used:   ${portfolio.state.margin_used:,.2f}")
+    print(f"  Portfolio val:  ${final_value:,.2f}")
+    print(f"  Return:         {((final_value / args.initial_cash) - 1) * 100:+.2f}%")
+
+    if portfolio.state.positions:
+        print()
+        print("  Positions:")
+        for ticker, pos in portfolio.state.positions.items():
+            price = current_prices.get(ticker, 0)
+            if pos.long_shares > 0:
+                mkt_val = pos.long_shares * price
+                pnl = (price - pos.avg_long_cost) * pos.long_shares
+                print(f"    {ticker} LONG: {pos.long_shares} shares "
+                      f"@ ${pos.avg_long_cost:.2f} "
+                      f"(mkt ${mkt_val:,.2f}, P&L ${pnl:+,.2f})")
+            if pos.short_shares > 0:
+                mkt_val = pos.short_shares * price
+                pnl = (pos.avg_short_cost - price) * pos.short_shares
+                print(f"    {ticker} SHORT: {pos.short_shares} shares "
+                      f"@ ${pos.avg_short_cost:.2f} "
+                      f"(mkt ${mkt_val:,.2f}, P&L ${pnl:+,.2f})")
+
+    if portfolio.trades:
+        print()
+        print(f"  Trades executed: {len(portfolio.trades)}")
+
+    print()
+    print("=" * 70)
 
 
 if __name__ == "__main__":
