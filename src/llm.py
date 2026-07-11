@@ -1,8 +1,9 @@
 """Shared LLM call utility for Covenant Hedge Fund analysts.
 
-Supports Anthropic (Claude) and OpenAI APIs. Checks ANTHROPIC_API_KEY
-first, falls back to OPENAI_API_KEY. If neither is set, returns a
-graceful fallback that produces neutral/0 signals.
+Supports Ollama (local), Anthropic (Claude), and OpenAI APIs.
+Priority chain: Ollama (free, local) -> Anthropic -> OpenAI -> fallback.
+If no LLM is available, returns a graceful fallback that produces
+neutral/0 signals.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.request
 
 
 # Fallback string -- triggers neutral/0 in analyst parsing
@@ -28,12 +30,33 @@ LLM_INSTRUCTION_SUFFIX = (
     'Respond with ONLY the JSON, no other text.'
 )
 
+# Ollama configuration
+_OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b-instruct")
+_OLLAMA_AVAILABLE: bool | None = None  # cached after first check
+
+
+def _check_ollama() -> bool:
+    """Check if Ollama is running by hitting its tags endpoint."""
+    global _OLLAMA_AVAILABLE
+    if _OLLAMA_AVAILABLE is not None:
+        return _OLLAMA_AVAILABLE
+    try:
+        req = urllib.request.Request(
+            f"{_OLLAMA_BASE_URL}/api/tags", method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            _OLLAMA_AVAILABLE = resp.status == 200
+    except Exception:
+        _OLLAMA_AVAILABLE = False
+    return _OLLAMA_AVAILABLE
+
 
 def call_llm(system_prompt: str, user_prompt: str) -> str:
     """Call an LLM and return the raw text response.
 
-    Tries Anthropic first, then OpenAI. Returns a fallback JSON string
-    if neither API key is set or if all retries fail.
+    Priority chain: Ollama (local) -> Anthropic -> OpenAI -> fallback.
+    Ollama is checked automatically (no API key needed).
 
     Args:
         system_prompt: System-level instruction (analyst philosophy).
@@ -42,15 +65,73 @@ def call_llm(system_prompt: str, user_prompt: str) -> str:
     Returns:
         Raw text response from the LLM.
     """
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
-    openai_key = os.environ.get("OPENAI_API_KEY")
+    # 1. Ollama (free, local) -- highest priority
+    if _check_ollama():
+        result = _call_ollama(system_prompt, user_prompt)
+        if result != _FALLBACK_RESPONSE:
+            return result
 
+    # 2. Anthropic (Claude)
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if anthropic_key:
         return _call_anthropic(system_prompt, user_prompt, anthropic_key)
-    elif openai_key:
+
+    # 3. OpenAI
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if openai_key:
         return _call_openai(system_prompt, user_prompt, openai_key)
-    else:
+
+    # 4. Fallback -- neutral/0
+    return _FALLBACK_RESPONSE
+
+
+def _call_ollama(system_prompt: str, user_prompt: str) -> str:
+    """Call Ollama via its OpenAI-compatible API with retry.
+
+    Uses the openai library pointed at Ollama's local endpoint.
+    No API key required -- Ollama runs locally for free.
+
+    If Ollama returns a CUDA or OOM error, marks Ollama as unavailable
+    for the remainder of the process so the call chain falls through
+    to Anthropic/OpenAI/fallback gracefully.
+    """
+    global _OLLAMA_AVAILABLE
+
+    try:
+        import openai
+    except ImportError:
         return _FALLBACK_RESPONSE
+
+    client = openai.OpenAI(
+        base_url=f"{_OLLAMA_BASE_URL}/v1",
+        api_key="ollama",  # Ollama ignores this but openai lib requires it
+        timeout=120.0,  # local models can be slow on first load
+    )
+
+    for attempt in range(2):
+        try:
+            response = client.chat.completions.create(
+                model=_OLLAMA_MODEL,
+                max_tokens=256,
+                temperature=0.3,  # lower temp for more consistent JSON output
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            return response.choices[0].message.content or _FALLBACK_RESPONSE
+        except Exception as e:
+            err_msg = str(e).lower()
+            # CUDA crash or OOM -- disable Ollama for this process
+            if "cuda" in err_msg or "out of memory" in err_msg or "terminated" in err_msg:
+                _OLLAMA_AVAILABLE = False
+                return _FALLBACK_RESPONSE
+            if attempt == 0:
+                time.sleep(2)
+            else:
+                return _FALLBACK_RESPONSE
+
+    return _FALLBACK_RESPONSE
 
 
 def _call_anthropic(system_prompt: str, user_prompt: str, api_key: str) -> str:
