@@ -54,25 +54,31 @@ All 18 analysts produce a uniform signal: `{signal, confidence, reasoning}`. The
 git clone https://github.com/asalsali/covenant-hedge-fund.git
 cd covenant-hedge-fund
 pip install -r requirements.txt
+python demo.py
 ```
 
-Run a single analysis (quant-only, no API keys required):
+This runs a 6-month backtest on AAPL, MSFT, NVDA using 5 quant analysts (no API keys needed). Results appear in your terminal and as an HTML report in `reports/`.
+
+For LLM-augmented analysis, set your API key:
+
+```bash
+export ANTHROPIC_API_KEY=your-key-here
+python -m src.main --tickers AAPL MSFT NVDA
+```
+
+### More Examples
+
+Run a single analysis with reasoning (quant-only, no API keys required):
 
 ```bash
 python -m src.main --tickers AAPL MSFT GOOGL --show-reasoning
 ```
 
-Run a backtest:
+Run a backtest over a custom date range:
 
 ```bash
 python -m src.main --tickers AAPL MSFT GOOGL JPM XOM \
   --backtest --start-date 2025-01-01
-```
-
-Run the curated demo (3 diversified tickers):
-
-```bash
-bash demo.sh
 ```
 
 ## How It Works
@@ -164,7 +170,8 @@ covenant-hedge-fund/
       macro.py           # Macro/contrarian domain (7 analysts)
   CLAUDE.md              # Project constitution
   COMPLIANCE.md          # 25 trading compliance rules
-  demo.sh                # Curated demo script
+  demo.py                # Zero-config one-command demo
+  demo.sh                # Shell-based demo script
   samples/
     single-shot-output.txt   # Example analysis output
     backtest-output.txt      # Example backtest output

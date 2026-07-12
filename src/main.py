@@ -57,6 +57,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Run analysts sequentially instead of in parallel (default: parallel).",
     )
+    parser.add_argument(
+        "--llm-lite",
+        action="store_true",
+        help=(
+            "Enable lite LLM backtest: run 4 LLM personas (Buffett, Graham, "
+            "Druckenmiller, Taleb) on 5 evenly-spaced rebalance dates. "
+            "Requires --backtest. ~60 LLM calls (~$1-2 on Anthropic)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -91,9 +100,14 @@ def main(argv: list[str] | None = None) -> None:
             end_date=end_date,
             initial_cash=args.initial_cash,
             show_reasoning=args.show_reasoning,
+            llm_lite=args.llm_lite,
         )
         engine.run()
         return
+
+    if args.llm_lite:
+        print("ERROR: --llm-lite requires --backtest mode.")
+        sys.exit(1)
 
     # -------------------------------------------------------------------------
     # 1. Initialize

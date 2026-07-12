@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from src.agents.parallel import run_analysts_parallel
 from src.agents.quant import QUANT_ANALYSTS
 from src.data.api import (
     clear_cache,
@@ -40,6 +41,15 @@ REBALANCE_INTERVAL = 5      # Run analysis every N trading days
 QUORUM_THRESHOLD = 3        # Minimum non-neutral signals for action
 SCORE_THRESHOLD = 0.3       # Normalized score threshold for action
 BENCHMARK_TICKER = "SPY"
+
+# LLM Lite defaults
+LLM_LITE_REBALANCE_COUNT = 5  # Number of rebalance dates to run LLM on
+LLM_LITE_PERSONAS = [
+    "BuffettAnalyst",
+    "GrahamAnalyst",
+    "DruckenmillerAnalyst",
+    "TalebAnalyst",
+]
 
 LINE_ITEMS_TO_FETCH = [
     "revenue", "net_income", "free_cash_flow",
@@ -69,15 +79,41 @@ class BacktestEngine:
         end_date: date,
         initial_cash: float = 100_000.0,
         show_reasoning: bool = False,
+        llm_lite: bool = False,
     ) -> None:
         self.tickers = [t.upper() for t in tickers]
         self.start_date = start_date
         self.end_date = end_date
         self.initial_cash = initial_cash
         self.show_reasoning = show_reasoning
+        self.llm_lite = llm_lite
 
         self.portfolio = Portfolio(initial_cash=initial_cash)
         self.analysts = [AnalystClass() for AnalystClass in QUANT_ANALYSTS]
+
+        # LLM lite: instantiate the 4 chosen LLM personas
+        self.llm_analysts: list = []
+        self.llm_rebalance_indices: set[int] = set()
+        if llm_lite:
+            from src.agents.value import BuffettAnalyst, GrahamAnalyst
+            from src.agents.macro import DruckenmillerAnalyst, TalebAnalyst
+            self.llm_analysts = [
+                BuffettAnalyst(),
+                GrahamAnalyst(),
+                DruckenmillerAnalyst(),
+                TalebAnalyst(),
+            ]
+        # Track LLM signal diffs for the comparison report
+        self.llm_signal_log: list[dict[str, Any]] = []
+
+        # Per-rebalance signal and decision history for report persistence
+        self.signal_history: dict[str, dict[str, dict[str, Any]]] = {}
+        self.decision_history: dict[str, dict[str, dict[str, Any]]] = {}
+
+        # Performance attributes set after run() completes
+        self.alpha: float | None = None
+        self.spy_return: float | None = None
+        self.spy_daily_values: list[tuple[str, float]] = []
 
     # ------------------------------------------------------------------
     # Data loading
@@ -183,6 +219,7 @@ class BacktestEngine:
         market_data: dict[str, dict[str, Any]],
         prices_dict: dict[str, list[float]],
         current_prices: dict[str, float],
+        current_date: str = "",
     ) -> None:
         """Run the full analysis-to-execution pipeline for one day."""
         # --- Quant analysts ---
@@ -193,6 +230,14 @@ class BacktestEngine:
                 if ticker not in all_signals:
                     all_signals[ticker] = {}
                 all_signals[ticker][analyst.name] = signal
+
+        # --- Persist signals ---
+        if current_date:
+            self.signal_history[current_date] = {
+                ticker: {name: {"signal": sig.signal, "confidence": sig.confidence, "reasoning": sig.reasoning}
+                         for name, sig in sigs.items()}
+                for ticker, sigs in all_signals.items()
+            }
 
         # --- Risk calculations ---
         vol_metrics = compute_volatility(prices_dict)
@@ -295,6 +340,278 @@ class BacktestEngine:
                     "weighted_score": normalized_score,
                 }
 
+        # --- Persist decisions ---
+        if current_date:
+            self.decision_history[current_date] = {
+                ticker: {
+                    "action": dec["action"],
+                    "quantity": dec["quantity"],
+                    "weighted_score": dec["weighted_score"],
+                    "reasoning": dec["reasoning"],
+                }
+                for ticker, dec in decisions.items()
+            }
+
+        # --- Execute trades ---
+        for ticker in active_tickers:
+            dec = decisions.get(ticker)
+            if not dec or dec["action"] == "hold" or dec["quantity"] == 0:
+                continue
+
+            price = current_prices.get(ticker, 0)
+            if price <= 0:
+                continue
+
+            try:
+                if dec["action"] == "buy":
+                    self.portfolio.execute_buy(
+                        ticker, dec["quantity"], price,
+                        reasoning=dec["reasoning"],
+                    )
+                elif dec["action"] == "sell":
+                    self.portfolio.execute_sell(
+                        ticker, dec["quantity"], price,
+                        reasoning=dec["reasoning"],
+                    )
+                elif dec["action"] == "short":
+                    self.portfolio.execute_short(
+                        ticker, dec["quantity"], price,
+                        reasoning=dec["reasoning"],
+                    )
+                elif dec["action"] == "cover":
+                    self.portfolio.execute_cover(
+                        ticker, dec["quantity"], price,
+                        reasoning=dec["reasoning"],
+                    )
+            except ValueError:
+                pass
+
+        # --- Show reasoning if requested ---
+        if self.show_reasoning:
+            for ticker in active_tickers:
+                dec = decisions.get(ticker, {})
+                if dec.get("action") != "hold":
+                    print(f"    {ticker}: {dec.get('action', 'hold').upper()} "
+                          f"{dec.get('quantity', 0)} "
+                          f"({dec.get('reasoning', '')})")
+
+    # ------------------------------------------------------------------
+    # LLM-enhanced analysis day
+    # ------------------------------------------------------------------
+
+    def _run_analysis_day_with_llm(
+        self,
+        active_tickers: list[str],
+        market_data: dict[str, dict[str, Any]],
+        prices_dict: dict[str, list[float]],
+        current_prices: dict[str, float],
+        current_date: str,
+    ) -> None:
+        """Run quant + LLM analysts together using the parallel runner.
+
+        On LLM rebalance days, we run all quant analysts plus the selected
+        LLM personas in parallel. The combined signals feed into the same
+        quorum/scoring pipeline as quant-only days.
+
+        Also logs the quant-only vs combined signal comparison for the
+        final diversity report.
+        """
+        # Run quant analysts first (fast, no API calls)
+        quant_signals: dict[str, dict[str, AnalystSignal]] = {}
+        for analyst in self.analysts:
+            results = analyst.analyze(active_tickers, market_data)
+            for ticker, signal in results.items():
+                if ticker not in quant_signals:
+                    quant_signals[ticker] = {}
+                quant_signals[ticker][analyst.name] = signal
+
+        # Run LLM analysts in parallel
+        llm_signals, llm_elapsed = run_analysts_parallel(
+            self.llm_analysts,
+            active_tickers,
+            market_data,
+            verbose=True,
+        )
+
+        print(f"    LLM analysts completed in {llm_elapsed:.1f}s")
+
+        # Merge: quant + LLM
+        all_signals: dict[str, dict[str, AnalystSignal]] = {}
+        for ticker in active_tickers:
+            all_signals[ticker] = {}
+            # Add quant signals
+            for name, sig in quant_signals.get(ticker, {}).items():
+                all_signals[ticker][name] = sig
+            # Add LLM signals
+            for name, sig in llm_signals.get(ticker, {}).items():
+                all_signals[ticker][name] = sig
+
+        # --- Persist signals ---
+        if current_date:
+            self.signal_history[current_date] = {
+                ticker: {name: {"signal": sig.signal, "confidence": sig.confidence, "reasoning": sig.reasoning}
+                         for name, sig in sigs.items()}
+                for ticker, sigs in all_signals.items()
+            }
+
+        # --- Log signal comparison for diversity report ---
+        for ticker in active_tickers:
+            quant_only = quant_signals.get(ticker, {})
+            llm_only = llm_signals.get(ticker, {})
+
+            # Compute quant-only score
+            q_weighted_sum = 0.0
+            q_conf_sum = 0.0
+            for sig in quant_only.values():
+                direction = {"bullish": 1.0, "bearish": -1.0}.get(sig.signal, 0.0)
+                conf = sig.confidence / 100.0
+                q_weighted_sum += conf * direction
+                q_conf_sum += conf
+            q_score = q_weighted_sum / q_conf_sum if q_conf_sum > 0 else 0.0
+
+            # Compute combined score
+            c_weighted_sum = q_weighted_sum
+            c_conf_sum = q_conf_sum
+            for sig in llm_only.values():
+                direction = {"bullish": 1.0, "bearish": -1.0}.get(sig.signal, 0.0)
+                conf = sig.confidence / 100.0
+                c_weighted_sum += conf * direction
+                c_conf_sum += conf
+            c_score = c_weighted_sum / c_conf_sum if c_conf_sum > 0 else 0.0
+
+            self.llm_signal_log.append({
+                "date": current_date,
+                "ticker": ticker,
+                "quant_score": round(q_score, 4),
+                "combined_score": round(c_score, 4),
+                "score_delta": round(c_score - q_score, 4),
+                "quant_signals": {
+                    n: {"signal": s.signal, "confidence": s.confidence}
+                    for n, s in quant_only.items()
+                },
+                "llm_signals": {
+                    n: {
+                        "signal": s.signal,
+                        "confidence": s.confidence,
+                        "reasoning": s.reasoning[:200] if s.reasoning else "",
+                    }
+                    for n, s in llm_only.items()
+                },
+            })
+
+        # --- Risk calculations (identical to quant-only path) ---
+        vol_metrics = compute_volatility(prices_dict)
+        corr_metrics = compute_correlation(prices_dict)
+
+        portfolio_value = self.portfolio.compute_portfolio_value(current_prices)
+
+        position_limits: dict[str, Any] = {}
+        allowed_actions: dict[str, list[str]] = {}
+
+        for ticker in active_tickers:
+            if ticker not in vol_metrics:
+                continue
+            limit = compute_position_limit(
+                ticker, portfolio_value, vol_metrics[ticker], corr_metrics,
+            )
+            position_limits[ticker] = limit
+            allowed = compute_allowed_actions(
+                ticker, self.portfolio.state, limit,
+                current_prices.get(ticker, 0),
+            )
+            allowed_actions[ticker] = allowed
+
+        # --- Quorum + confidence-weighted synthesis (same logic) ---
+        decisions: dict[str, dict[str, Any]] = {}
+
+        for ticker in active_tickers:
+            signals = all_signals.get(ticker, {})
+            non_neutral = [
+                (name, sig) for name, sig in signals.items()
+                if sig.signal != "neutral"
+            ]
+
+            if len(non_neutral) < QUORUM_THRESHOLD:
+                decisions[ticker] = {
+                    "action": "hold", "quantity": 0,
+                    "reasoning": f"Quorum not met: {len(non_neutral)}/{QUORUM_THRESHOLD}",
+                    "weighted_score": 0.0,
+                }
+                continue
+
+            weighted_sum = 0.0
+            confidence_sum = 0.0
+            for _name, sig in signals.items():
+                direction = {"bullish": 1.0, "bearish": -1.0}.get(sig.signal, 0.0)
+                conf = sig.confidence / 100.0
+                weighted_sum += conf * direction
+                confidence_sum += conf
+
+            normalized_score = (
+                weighted_sum / confidence_sum if confidence_sum > 0 else 0.0
+            )
+
+            allowed = allowed_actions.get(ticker, ["hold"])
+            price = current_prices.get(ticker, 0)
+
+            if normalized_score > SCORE_THRESHOLD and "buy" in allowed:
+                pl = position_limits.get(ticker)
+                if pl and price > 0:
+                    target_notional = pl.max_notional * 0.5
+                    quantity = max(1, int(target_notional / price))
+                else:
+                    quantity = 0
+                decisions[ticker] = {
+                    "action": "buy", "quantity": quantity,
+                    "reasoning": f"Bullish consensus (score={normalized_score:+.2f})",
+                    "weighted_score": normalized_score,
+                }
+            elif normalized_score < -SCORE_THRESHOLD:
+                if "sell" in allowed:
+                    pos = self.portfolio.state.positions.get(ticker)
+                    quantity = pos.long_shares if pos else 0
+                    decisions[ticker] = {
+                        "action": "sell", "quantity": quantity,
+                        "reasoning": f"Bearish consensus (score={normalized_score:+.2f})",
+                        "weighted_score": normalized_score,
+                    }
+                elif "short" in allowed:
+                    pl = position_limits.get(ticker)
+                    if pl and price > 0:
+                        target_notional = pl.max_notional * 0.5
+                        quantity = max(1, int(target_notional / price))
+                    else:
+                        quantity = 0
+                    decisions[ticker] = {
+                        "action": "short", "quantity": quantity,
+                        "reasoning": f"Bearish consensus (score={normalized_score:+.2f})",
+                        "weighted_score": normalized_score,
+                    }
+                else:
+                    decisions[ticker] = {
+                        "action": "hold", "quantity": 0,
+                        "reasoning": f"Bearish (score={normalized_score:+.2f}) but no sell/short allowed",
+                        "weighted_score": normalized_score,
+                    }
+            else:
+                decisions[ticker] = {
+                    "action": "hold", "quantity": 0,
+                    "reasoning": f"Score within threshold (score={normalized_score:+.2f})",
+                    "weighted_score": normalized_score,
+                }
+
+        # --- Persist decisions ---
+        if current_date:
+            self.decision_history[current_date] = {
+                ticker: {
+                    "action": dec["action"],
+                    "quantity": dec["quantity"],
+                    "weighted_score": dec["weighted_score"],
+                    "reasoning": dec["reasoning"],
+                }
+                for ticker, dec in decisions.items()
+            }
+
         # --- Execute trades ---
         for ticker in active_tickers:
             dec = decisions.get(ticker)
@@ -344,14 +661,18 @@ class BacktestEngine:
 
     def run(self) -> PerformanceMetrics:
         """Execute the full backtest."""
+        mode_label = "LLM-Lite" if self.llm_lite else "Quant-Only"
         print("=" * 70)
-        print("COVENANT HEDGE FUND -- Backtest Mode")
+        print(f"COVENANT HEDGE FUND -- Backtest Mode ({mode_label})")
         print("=" * 70)
         print(f"  Tickers:    {', '.join(self.tickers)}")
         print(f"  Date range: {self.start_date} to {self.end_date}")
         print(f"  Cash:       ${self.initial_cash:,.2f}")
         print(f"  Rebalance:  every {REBALANCE_INTERVAL} trading days")
         print(f"  Lookback:   {LOOKBACK_WINDOW} trading days")
+        if self.llm_lite:
+            print(f"  LLM personas: {', '.join(a.name for a in self.llm_analysts)}")
+            print(f"  LLM dates:  {LLM_LITE_REBALANCE_COUNT} evenly spaced")
         print()
 
         # -- Fetch all data upfront --
@@ -390,10 +711,40 @@ class BacktestEngine:
 
         print(f"[2/3] Running backtest over {n_trading_days} trading days "
               f"(skipping first {LOOKBACK_WINDOW} for lookback)...")
+
+        # -- Compute LLM rebalance schedule --
+        # First, figure out which day indices are rebalance days
+        rebalance_day_indices: list[int] = []
+        _counter = REBALANCE_INTERVAL  # Force rebalance on day 1
+        for i in range(n_trading_days):
+            _counter += 1
+            if _counter >= REBALANCE_INTERVAL:
+                _counter = 0
+                rebalance_day_indices.append(i)
+
+        if self.llm_lite and rebalance_day_indices:
+            n_rb = len(rebalance_day_indices)
+            n_llm = min(LLM_LITE_REBALANCE_COUNT, n_rb)
+            # Evenly spaced indices into the rebalance list
+            if n_llm >= n_rb:
+                llm_rb_positions = list(range(n_rb))
+            else:
+                step = (n_rb - 1) / (n_llm - 1) if n_llm > 1 else 0
+                llm_rb_positions = [round(i * step) for i in range(n_llm)]
+            self.llm_rebalance_indices = {
+                rebalance_day_indices[p] for p in llm_rb_positions
+            }
+            llm_dates = [trading_days[rebalance_day_indices[p]] for p in llm_rb_positions]
+            print(f"  LLM rebalance dates: {', '.join(llm_dates)}")
+            print(f"  Total rebalance days: {n_rb}, LLM days: {len(self.llm_rebalance_indices)}")
+            est_calls = len(self.llm_rebalance_indices) * len(self.llm_analysts) * len(active_tickers)
+            print(f"  Estimated LLM calls: ~{est_calls}")
+
         print()
 
         # -- Day-by-day iteration --
         days_since_rebalance = REBALANCE_INTERVAL  # Force rebalance on day 1
+        rebalance_count = -1  # Will increment to 0 on first rebalance
 
         for day_idx, current_date in enumerate(trading_days):
             # Progress reporting every 10 days
@@ -419,6 +770,12 @@ class BacktestEngine:
             # Rebalance check: run analysis every REBALANCE_INTERVAL days
             if days_since_rebalance >= REBALANCE_INTERVAL:
                 days_since_rebalance = 0
+
+                # Check if this is an LLM rebalance day
+                is_llm_day = (
+                    self.llm_lite
+                    and day_idx in self.llm_rebalance_indices
+                )
 
                 # Build as-of market_data and prices_dict
                 market_data: dict[str, dict[str, Any]] = {}
@@ -446,12 +803,24 @@ class BacktestEngine:
                 ]
 
                 if analyzable_tickers:
-                    self._run_analysis_day(
-                        analyzable_tickers,
-                        market_data,
-                        prices_dict,
-                        current_prices,
-                    )
+                    if is_llm_day:
+                        print(f"    ** LLM day: {current_date} -- "
+                              f"running quant + {len(self.llm_analysts)} LLM personas")
+                        self._run_analysis_day_with_llm(
+                            analyzable_tickers,
+                            market_data,
+                            prices_dict,
+                            current_prices,
+                            current_date,
+                        )
+                    else:
+                        self._run_analysis_day(
+                            analyzable_tickers,
+                            market_data,
+                            prices_dict,
+                            current_prices,
+                            current_date,
+                        )
 
             # Record daily portfolio value (every day, not just rebalance)
             self.portfolio.record_daily_value(current_date, current_prices)
@@ -478,6 +847,16 @@ class BacktestEngine:
                 spy_end = spy_in_range[-1]["close"]
                 spy_return = (spy_end - spy_start) / spy_start
 
+                # Build SPY daily values normalized to initial_cash for chart overlay
+                for sp in spy_in_range:
+                    normalized = (sp["close"] / spy_start) * self.initial_cash
+                    self.spy_daily_values.append((sp["date"], normalized))
+
+        # Store alpha and spy_return as engine attributes
+        self.spy_return = spy_return
+        total_return = metrics.total_return or 0.0
+        self.alpha = (total_return - spy_return) if spy_return is not None else None
+
         # -- Final portfolio value --
         final_value = self.initial_cash
         if self.portfolio.daily_values:
@@ -495,7 +874,109 @@ class BacktestEngine:
             realized_pnl=realized_pnl,
         )
 
+        # -- Print LLM diversity report if applicable --
+        if self.llm_lite and self.llm_signal_log:
+            self._print_llm_diversity_report()
+
+        # -- Generate HTML report --
+        try:
+            from src.report import generate_report
+            report_data = self.to_report_json(metrics, n_trading_days)
+            report_path = generate_report(report_data)
+            print(f"\nReport saved to {report_path}")
+        except Exception as e:
+            print(f"\nWARNING: Could not generate HTML report: {e}")
+
         return metrics
+
+    # ------------------------------------------------------------------
+    # Report data serialization
+    # ------------------------------------------------------------------
+
+    def to_report_json(
+        self,
+        metrics: PerformanceMetrics,
+        n_trading_days: int,
+    ) -> dict[str, Any]:
+        """Serialize the full backtest data into a JSON-serializable dict.
+
+        This is the integration point for the HTML report generator.
+        Captures metadata, performance, equity curve, trades, signals,
+        decisions, and risk data.
+        """
+        from datetime import datetime as _dt
+
+        # Collect all analysts (quant + any LLM)
+        all_analysts = list(self.analysts) + list(self.llm_analysts)
+        analyst_info = [
+            {"name": a.name, "domain": a.domain, "uses_llm": a.uses_llm}
+            for a in all_analysts
+        ]
+
+        total_return = metrics.total_return or 0.0
+        final_value = self.initial_cash
+        if self.portfolio.daily_values:
+            final_value = self.portfolio.daily_values[-1][1]
+
+        # Build SPY lookup for equity curve overlay
+        spy_lookup: dict[str, float] = {d: v for d, v in self.spy_daily_values}
+
+        # Equity curve
+        equity_curve = [
+            {
+                "date": d,
+                "value": round(v, 2),
+                "spy_value": round(spy_lookup.get(d, 0.0), 2) if spy_lookup else None,
+            }
+            for d, v in self.portfolio.daily_values
+        ]
+
+        # Trades
+        trades = [
+            {
+                "date": t.timestamp[:10] if len(t.timestamp) >= 10 else t.timestamp,
+                "ticker": t.ticker,
+                "action": t.action,
+                "quantity": t.quantity,
+                "price": round(t.price, 2),
+                "notional": round(t.notional, 2),
+                "reasoning": t.reasoning,
+            }
+            for t in self.portfolio.trades
+        ]
+
+        # Risk stub (volatility and correlation are computed per-day, store last)
+        risk: dict[str, Any] = {"volatility": {}, "correlation": {}}
+
+        return {
+            "metadata": {
+                "run_date": _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+                "tickers": self.tickers,
+                "mode": "llm-lite" if self.llm_lite else "quant-only",
+                "start_date": str(self.start_date),
+                "end_date": str(self.end_date),
+                "initial_cash": self.initial_cash,
+                "trading_days": n_trading_days,
+                "analyst_count": len(all_analysts),
+                "analysts": analyst_info,
+            },
+            "performance": {
+                "total_return": total_return,
+                "sharpe_ratio": metrics.sharpe_ratio,
+                "sortino_ratio": metrics.sortino_ratio,
+                "max_drawdown": metrics.max_drawdown,
+                "max_drawdown_date": metrics.max_drawdown_date,
+                "annualized_return": metrics.annualized_return,
+                "alpha_vs_spy": self.alpha,
+                "spy_return": self.spy_return,
+                "final_value": round(final_value, 2),
+            },
+            "equity_curve": equity_curve,
+            "trades": trades,
+            "signals": self.signal_history,
+            "decisions": self.decision_history,
+            "risk": risk,
+        }
 
     # ------------------------------------------------------------------
     # Report
@@ -551,5 +1032,102 @@ class BacktestEngine:
         print("  " + "-" * 66)
         print(f"  Total trades:      {n_trades}")
         print(f"  Realized P&L:      ${realized_pnl:+,.2f}")
+        print()
+        print("=" * 70)
+
+    # ------------------------------------------------------------------
+    # LLM Diversity Report
+    # ------------------------------------------------------------------
+
+    def _print_llm_diversity_report(self) -> None:
+        """Print a detailed report comparing quant-only vs LLM-enhanced signals."""
+        print()
+        print("=" * 70)
+        print("LLM SIGNAL DIVERSITY REPORT")
+        print("=" * 70)
+        print()
+
+        # Group by date
+        dates_seen: list[str] = []
+        for entry in self.llm_signal_log:
+            if entry["date"] not in dates_seen:
+                dates_seen.append(entry["date"])
+
+        total_changes = 0
+        total_observations = 0
+        direction_changes = 0  # Cases where LLM flipped the decision direction
+
+        for dt in dates_seen:
+            print(f"  Date: {dt}")
+            print("  " + "-" * 66)
+            entries = [e for e in self.llm_signal_log if e["date"] == dt]
+
+            for entry in entries:
+                ticker = entry["ticker"]
+                q_score = entry["quant_score"]
+                c_score = entry["combined_score"]
+                delta = entry["score_delta"]
+                total_observations += 1
+
+                # Did the LLM change anything?
+                changed = abs(delta) > 0.01
+                if changed:
+                    total_changes += 1
+
+                # Did the direction actually flip?
+                q_action = "buy" if q_score > SCORE_THRESHOLD else (
+                    "sell" if q_score < -SCORE_THRESHOLD else "hold"
+                )
+                c_action = "buy" if c_score > SCORE_THRESHOLD else (
+                    "sell" if c_score < -SCORE_THRESHOLD else "hold"
+                )
+                flipped = q_action != c_action
+                if flipped:
+                    direction_changes += 1
+
+                flip_marker = " << DECISION CHANGED" if flipped else ""
+                delta_marker = f" (delta {delta:+.4f})" if changed else " (no change)"
+
+                print(f"    {ticker}: quant={q_score:+.4f} -> combined={c_score:+.4f}"
+                      f"{delta_marker}{flip_marker}")
+
+                # Show individual LLM signals
+                for name, sig_data in entry["llm_signals"].items():
+                    arrow = {"bullish": "+", "bearish": "-", "neutral": "="}[sig_data["signal"]]
+                    reasoning_preview = sig_data.get("reasoning", "")[:80]
+                    print(f"      {name}: {arrow}{sig_data['confidence']} "
+                          f"-- {reasoning_preview}")
+            print()
+
+        # Summary
+        print("  " + "=" * 66)
+        print("  DIVERSITY SUMMARY")
+        print("  " + "=" * 66)
+        print(f"  Total observations (ticker x date):  {total_observations}")
+        print(f"  Score changed by LLM:                {total_changes}/{total_observations}")
+        pct_changed = (total_changes / total_observations * 100) if total_observations > 0 else 0
+        print(f"  Change rate:                         {pct_changed:.0f}%")
+        print(f"  Decision direction flipped:          {direction_changes}/{total_observations}")
+        print()
+
+        # Consistency analysis: are LLMs consistently bearish/bullish moderators?
+        bearish_shifts = sum(1 for e in self.llm_signal_log if e["score_delta"] < -0.01)
+        bullish_shifts = sum(1 for e in self.llm_signal_log if e["score_delta"] > 0.01)
+        neutral_shifts = total_observations - bearish_shifts - bullish_shifts
+
+        print(f"  LLM directional bias:")
+        print(f"    Bearish shifts (LLM moderated bullishness): {bearish_shifts}")
+        print(f"    Bullish shifts (LLM boosted bullishness):   {bullish_shifts}")
+        print(f"    Neutral (no material change):               {neutral_shifts}")
+
+        if bearish_shifts > bullish_shifts * 2:
+            print("  --> LLMs are consistently bearish moderators")
+        elif bullish_shifts > bearish_shifts * 2:
+            print("  --> LLMs are consistently bullish amplifiers")
+        elif bearish_shifts > 0 or bullish_shifts > 0:
+            print("  --> LLMs show mixed directional influence (context-dependent)")
+        else:
+            print("  --> LLMs had no material effect on signals")
+
         print()
         print("=" * 70)
