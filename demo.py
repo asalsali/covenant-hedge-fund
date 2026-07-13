@@ -34,6 +34,9 @@ def main() -> None:
     print("Running 6-month backtest on AAPL, MSFT, NVDA")
     print("(quant-only, no API keys needed)")
     print()
+    print("Tip: crypto tickers are also supported. Try:")
+    print("  python -m src.main --tickers BTC ETH SOL --backtest --start-date 2025-01-01")
+    print()
 
     tickers = ["AAPL", "MSFT", "NVDA"]
     end_date = date.today()

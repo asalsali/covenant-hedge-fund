@@ -22,7 +22,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--tickers",
         nargs="+",
         required=True,
-        help="Ticker symbols to analyze (e.g., AAPL MSFT GOOGL)",
+        help="Ticker symbols to analyze (e.g., AAPL MSFT GOOGL). Crypto supported: BTC ETH SOL etc.",
     )
     parser.add_argument(
         "--start-date",
@@ -137,6 +137,8 @@ def main(argv: list[str] | None = None) -> None:
     # -------------------------------------------------------------------------
     # 2. Fetch market data
     # -------------------------------------------------------------------------
+    from src.data.crypto import cg_get_crypto_metrics, is_crypto, resolve_coin_id
+
     print("[1/6] Fetching market data...")
 
     LINE_ITEMS_TO_FETCH = [
@@ -155,24 +157,40 @@ def main(argv: list[str] | None = None) -> None:
                 failed_tickers.append(ticker)
                 continue
 
-            financial_metrics = get_financial_metrics(
-                ticker, end_date, period="annual", limit=5,
-            )
-            insider_trades = get_insider_trades(ticker, end_date)
-            line_items = search_line_items(
-                ticker, LINE_ITEMS_TO_FETCH, end_date,
-                period="annual", limit=5,
-            )
+            if is_crypto(ticker):
+                # Crypto: no traditional fundamentals, fetch crypto metrics
+                md_entry: dict[str, Any] = {
+                    "prices": prices,
+                    "financial_metrics": [],
+                    "insider_trades": [],
+                    "line_items": [],
+                }
+                coin_id = resolve_coin_id(ticker)
+                if coin_id:
+                    crypto_m = cg_get_crypto_metrics(coin_id)
+                    if crypto_m:
+                        md_entry["crypto_metrics"] = crypto_m
+                market_data[ticker] = md_entry
+                print(f"  {ticker}: {len(prices)} price bars (crypto)")
+            else:
+                financial_metrics = get_financial_metrics(
+                    ticker, end_date, period="annual", limit=5,
+                )
+                insider_trades = get_insider_trades(ticker, end_date)
+                line_items = search_line_items(
+                    ticker, LINE_ITEMS_TO_FETCH, end_date,
+                    period="annual", limit=5,
+                )
 
-            market_data[ticker] = {
-                "prices": prices,
-                "financial_metrics": financial_metrics,
-                "insider_trades": insider_trades,
-                "line_items": line_items,
-            }
-            print(f"  {ticker}: {len(prices)} price bars, "
-                  f"{len(financial_metrics)} metric periods, "
-                  f"{len(insider_trades)} insider trades")
+                market_data[ticker] = {
+                    "prices": prices,
+                    "financial_metrics": financial_metrics,
+                    "insider_trades": insider_trades,
+                    "line_items": line_items,
+                }
+                print(f"  {ticker}: {len(prices)} price bars, "
+                      f"{len(financial_metrics)} metric periods, "
+                      f"{len(insider_trades)} insider trades")
 
         except Exception as e:
             print(f"  WARNING: Failed to fetch data for {ticker}: {e}")
@@ -193,13 +211,22 @@ def main(argv: list[str] | None = None) -> None:
     from src.agents.quant import QUANT_ANALYSTS
     from src.agents.value import VALUE_ANALYSTS
     from src.agents.macro import MACRO_ANALYSTS
+    from src.agents.crypto import CRYPTO_ANALYSTS, CRYPTO_LLM_ANALYSTS
     from src.agents.parallel import run_analysts_parallel, run_analysts_sequential
+
+    has_crypto = any(is_crypto(t) for t in active_tickers)
 
     all_analysts = (
         [Cls() for Cls in QUANT_ANALYSTS]
         + [Cls() for Cls in VALUE_ANALYSTS]
         + [Cls() for Cls in MACRO_ANALYSTS]
     )
+
+    # Add crypto-specialized analysts when any ticker is crypto
+    if has_crypto:
+        all_analysts.extend(Cls() for Cls in CRYPTO_ANALYSTS)
+        all_analysts.extend(Cls() for Cls in CRYPTO_LLM_ANALYSTS)
+
     analyst_names = [a.name for a in all_analysts]
 
     run_fn = run_analysts_sequential if args.sequential else run_analysts_parallel

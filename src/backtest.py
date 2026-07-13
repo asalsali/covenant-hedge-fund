@@ -15,6 +15,7 @@ from typing import Any
 
 from src.agents.parallel import run_analysts_parallel
 from src.agents.quant import QUANT_ANALYSTS
+from src.agents.crypto import CRYPTO_ANALYSTS, CRYPTO_LLM_ANALYSTS
 from src.data.api import (
     clear_cache,
     get_financial_metrics,
@@ -22,6 +23,7 @@ from src.data.api import (
     get_prices,
     search_line_items,
 )
+from src.data.crypto import cg_get_crypto_metrics, is_crypto, resolve_coin_id
 from src.models import AnalystSignal, PerformanceMetrics
 from src.portfolio import Portfolio
 from src.risk import (
@@ -91,6 +93,13 @@ class BacktestEngine:
         self.portfolio = Portfolio(initial_cash=initial_cash)
         self.analysts = [AnalystClass() for AnalystClass in QUANT_ANALYSTS]
 
+        # Add crypto-specialized quant analysts when any ticker is crypto
+        has_crypto = any(is_crypto(t) for t in self.tickers)
+        if has_crypto:
+            self.analysts.extend(
+                AnalystClass() for AnalystClass in CRYPTO_ANALYSTS
+            )
+
         # LLM lite: instantiate the 4 chosen LLM personas
         self.llm_analysts: list = []
         self.llm_rebalance_indices: set[int] = set()
@@ -103,6 +112,11 @@ class BacktestEngine:
                 DruckenmillerAnalyst(),
                 TalebAnalyst(),
             ]
+            # Add crypto-specialized LLM analysts when any ticker is crypto
+            if has_crypto:
+                self.llm_analysts.extend(
+                    AnalystClass() for AnalystClass in CRYPTO_LLM_ANALYSTS
+                )
         # Track LLM signal diffs for the comparison report
         self.llm_signal_log: list[dict[str, Any]] = []
 
@@ -149,19 +163,31 @@ class BacktestEngine:
                     continue
                 all_prices[ticker] = prices
 
-                # Fundamentals fetched once (quarterly/annual, not daily)
-                financial_metrics[ticker] = get_financial_metrics(
-                    ticker, self.end_date, period="annual", limit=5,
-                )
-                insider_trades[ticker] = get_insider_trades(
-                    ticker, self.end_date,
-                )
-                line_items[ticker] = search_line_items(
-                    ticker, LINE_ITEMS_TO_FETCH, self.end_date,
-                    period="annual", limit=5,
-                )
-
-                print(f"  {ticker}: {len(prices)} price bars loaded")
+                if is_crypto(ticker):
+                    # Crypto: no traditional fundamentals, fetch crypto metrics instead
+                    financial_metrics[ticker] = []
+                    insider_trades[ticker] = []
+                    line_items[ticker] = []
+                    coin_id = resolve_coin_id(ticker)
+                    if coin_id:
+                        crypto_m = cg_get_crypto_metrics(coin_id)
+                        if not hasattr(self, '_crypto_metrics'):
+                            self._crypto_metrics: dict[str, dict] = {}
+                        self._crypto_metrics[ticker] = crypto_m
+                    print(f"  {ticker}: {len(prices)} price bars loaded (crypto)")
+                else:
+                    # Fundamentals fetched once (quarterly/annual, not daily)
+                    financial_metrics[ticker] = get_financial_metrics(
+                        ticker, self.end_date, period="annual", limit=5,
+                    )
+                    insider_trades[ticker] = get_insider_trades(
+                        ticker, self.end_date,
+                    )
+                    line_items[ticker] = search_line_items(
+                        ticker, LINE_ITEMS_TO_FETCH, self.end_date,
+                        period="annual", limit=5,
+                    )
+                    print(f"  {ticker}: {len(prices)} price bars loaded")
 
             except Exception as e:
                 print(f"  WARNING: Failed to fetch data for {ticker}: {e}")
@@ -791,12 +817,16 @@ class BacktestEngine:
                         continue
 
                     prices_dict[ticker] = closes
-                    market_data[ticker] = {
+                    md_entry: dict[str, Any] = {
                         "prices": as_of_prices,
                         "financial_metrics": financial_metrics.get(ticker, []),
                         "insider_trades": insider_trades.get(ticker, []),
                         "line_items": line_items.get(ticker, []),
                     }
+                    # Attach crypto metrics if available
+                    if hasattr(self, '_crypto_metrics') and ticker in self._crypto_metrics:
+                        md_entry["crypto_metrics"] = self._crypto_metrics[ticker]
+                    market_data[ticker] = md_entry
 
                 analyzable_tickers = [
                     t for t in day_active_tickers if t in market_data

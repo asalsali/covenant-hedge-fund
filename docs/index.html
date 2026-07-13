@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Covenant Hedge Fund - AI-Governed Portfolio Analysis</title>
+<meta name="description" content="18-analyst AI portfolio system with deterministic risk management. +73% return, Sharpe 2.20, +37% alpha vs SPY.">
+<style>
+:root {
+    --bg-primary: #0f1117;
+    --bg-secondary: #1a1d29;
+    --bg-card: #21253a;
+    --bg-hover: #2a2f45;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --border: #2d3348;
+    --accent: #3b82f6;
+    --positive: #22c55e;
+    --negative: #ef4444;
+    --warning: #f59e0b;
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* -- Layout -- */
+.container { max-width: 1100px; margin: 0 auto; padding: 0 2rem; }
+section { padding: 5rem 0; }
+
+/* -- Hero -- */
+.hero {
+    min-height: 90vh;
+    display: flex;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+}
+.hero::before {
+    content: '';
+    position: absolute;
+    top: -40%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 800px;
+    height: 800px;
+    background: radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%);
+    pointer-events: none;
+}
+.hero-content { position: relative; z-index: 1; width: 100%; }
+.hero-badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    border: 1px solid rgba(59,130,246,0.3);
+    border-radius: 999px;
+    padding: 0.375rem 1rem;
+    margin-bottom: 1.5rem;
+}
+.hero h1 {
+    font-size: clamp(2.25rem, 5vw, 3.5rem);
+    font-weight: 800;
+    line-height: 1.15;
+    margin-bottom: 1.25rem;
+    letter-spacing: -0.02em;
+}
+.hero h1 .accent { color: var(--accent); }
+.hero .subtitle {
+    font-size: 1.15rem;
+    color: var(--text-secondary);
+    max-width: 600px;
+    margin-bottom: 2.5rem;
+    line-height: 1.7;
+}
+
+/* -- Metric Cards -- */
+.metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+}
+.metric-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem;
+    text-align: center;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+.metric-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+}
+.metric-value {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+.metric-value.green { color: var(--positive); }
+.metric-value.blue { color: var(--accent); }
+.metric-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-top: 0.375rem;
+}
+
+/* -- CTA -- */
+.cta-row {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+.btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 0.75rem 1.75rem;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: background 0.2s ease;
+}
+.btn-primary:hover { background: #2563eb; }
+.btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.95rem;
+    padding: 0.75rem 1.75rem;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: border-color 0.2s ease, color 0.2s ease;
+}
+.btn-secondary:hover { border-color: var(--text-secondary); color: var(--text-primary); }
+
+/* -- Section Headers -- */
+.section-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    margin-bottom: 0.75rem;
+}
+.section-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 0.75rem;
+    letter-spacing: -0.01em;
+}
+.section-desc {
+    color: var(--text-secondary);
+    max-width: 600px;
+    margin-bottom: 3rem;
+}
+
+/* -- How It Works -- */
+.steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+}
+.step {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 2rem;
+    position: relative;
+}
+.step-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    background: rgba(59,130,246,0.12);
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 0.9rem;
+    border-radius: 8px;
+    margin-bottom: 1.25rem;
+}
+.step h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 0.625rem;
+}
+.step p {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.65;
+}
+
+/* -- Analysts -- */
+.domains {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+}
+.domain-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 2rem;
+}
+.domain-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+}
+.domain-name {
+    font-size: 1rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.domain-count {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+}
+.domain-card.quant .domain-name { color: var(--accent); }
+.domain-card.value .domain-name { color: var(--positive); }
+.domain-card.macro .domain-name { color: var(--warning); }
+.analyst-list { list-style: none; }
+.analyst-list li {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    padding: 0.375rem 0;
+    border-bottom: 1px solid rgba(45,51,72,0.5);
+}
+.analyst-list li:last-child { border-bottom: none; }
+.domain-note {
+    margin-top: 1rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* -- Demo -- */
+.demo-section {
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+}
+.demo-inner {
+    display: flex;
+    align-items: center;
+    gap: 4rem;
+}
+.demo-text { flex: 1; }
+.demo-terminal {
+    flex: 1;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+}
+.terminal-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+}
+.terminal-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--border);
+}
+.terminal-dot:nth-child(1) { background: #ef4444; }
+.terminal-dot:nth-child(2) { background: #f59e0b; }
+.terminal-dot:nth-child(3) { background: #22c55e; }
+.terminal-body {
+    padding: 1.25rem;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+    font-size: 0.825rem;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    white-space: pre;
+    overflow-x: auto;
+}
+.terminal-body .cmd { color: var(--positive); }
+.terminal-body .out { color: var(--text-muted); }
+.terminal-body .highlight { color: var(--accent); }
+
+/* -- Comparison Table -- */
+.comparison {
+    overflow-x: auto;
+    margin-top: 3rem;
+}
+.comparison table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+.comparison th {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    border-bottom: 2px solid var(--border);
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.comparison td {
+    padding: 0.625rem 1rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+}
+.comparison tr:hover td { background: var(--bg-hover); }
+.comparison .yes { color: var(--positive); font-weight: 600; }
+.comparison .no { color: var(--negative); }
+
+/* -- Footer -- */
+.footer {
+    padding: 3rem 0;
+    border-top: 1px solid var(--border);
+    text-align: center;
+}
+.footer-links {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    margin-bottom: 1.5rem;
+}
+.footer-links a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.875rem;
+    transition: color 0.15s;
+}
+.footer-links a:hover { color: var(--text-primary); }
+.footer-note {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* -- Responsive -- */
+@media (max-width: 768px) {
+    .container { padding: 0 1.25rem; }
+    section { padding: 3.5rem 0; }
+    .metrics { grid-template-columns: repeat(2, 1fr); }
+    .steps { grid-template-columns: 1fr; }
+    .domains { grid-template-columns: 1fr; }
+    .demo-inner { flex-direction: column; gap: 2rem; }
+    .cta-row { flex-direction: column; align-items: flex-start; }
+}
+@media (max-width: 480px) {
+    .metrics { grid-template-columns: 1fr; }
+}
+
+/* -- Animations -- */
+@keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.fade-up {
+    animation: fadeUp 0.6s ease forwards;
+    opacity: 0;
+}
+.fade-up:nth-child(1) { animation-delay: 0s; }
+.fade-up:nth-child(2) { animation-delay: 0.1s; }
+.fade-up:nth-child(3) { animation-delay: 0.2s; }
+.fade-up:nth-child(4) { animation-delay: 0.3s; }
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<section class="hero">
+<div class="container">
+<div class="hero-content">
+    <div class="hero-badge fade-up">Open Source Portfolio Engine</div>
+    <h1 class="fade-up">AI-governed investing.<br><span class="accent">Deterministic risk.</span></h1>
+    <p class="subtitle fade-up">18 analyst personas. 3 investment domains. 25 risk rules enforced in code, not by an LLM. Every signal is reproducible, every decision is auditable.</p>
+
+    <div class="metrics fade-up">
+        <div class="metric-card">
+            <div class="metric-value green">+73%</div>
+            <div class="metric-label">Total Return</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value blue">2.20</div>
+            <div class="metric-label">Sharpe Ratio</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value green">+37%</div>
+            <div class="metric-label">Alpha vs SPY</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value blue">18</div>
+            <div class="metric-label">Analyst Personas</div>
+        </div>
+    </div>
+
+    <div class="cta-row fade-up">
+        <a href="https://github.com/asalsali/covenant-hedge-fund" class="btn-primary">View on GitHub</a>
+        <a href="#demo" class="btn-secondary">Try the demo</a>
+    </div>
+</div>
+</div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="methodology">
+<div class="container">
+    <div class="section-label">Methodology</div>
+    <h2 class="section-title">How it works</h2>
+    <p class="section-desc">A governed pipeline from market data to trade execution. Each stage is deterministic and auditable.</p>
+
+    <div class="steps">
+        <div class="step fade-up">
+            <div class="step-number">1</div>
+            <h3>Data Collection</h3>
+            <p>Market prices, financial metrics, and insider activity are fetched from Yahoo Finance for the target universe. No paid data feeds required.</p>
+        </div>
+        <div class="step fade-up">
+            <div class="step-number">2</div>
+            <h3>Multi-Agent Analysis</h3>
+            <p>18 analyst personas -- quant, value, and macro -- each produce a scored signal with confidence and reasoning. Quant analysts run without any LLM. Value and macro analysts use optional LLM augmentation and degrade gracefully without one.</p>
+        </div>
+        <div class="step fade-up">
+            <div class="step-number">3</div>
+            <h3>Risk-Managed Portfolio</h3>
+            <p>Signals are combined via confidence-weighted scoring. The risk engine enforces volatility limits, correlation constraints, and position caps in code. Same inputs always produce the same trades.</p>
+        </div>
+    </div>
+</div>
+</section>
+
+<!-- ANALYSTS -->
+<section id="analysts">
+<div class="container">
+    <div class="section-label">Investment Committee</div>
+    <h2 class="section-title">18 analyst personas across 3 domains</h2>
+    <p class="section-desc">Each analyst produces a uniform signal: direction, confidence, and reasoning. Consensus drives allocation.</p>
+
+    <div class="domains">
+        <div class="domain-card quant fade-up">
+            <div class="domain-header-row">
+                <div class="domain-name">Quant</div>
+                <div class="domain-count">5 analysts</div>
+            </div>
+            <ul class="analyst-list">
+                <li>Technicals</li>
+                <li>Fundamentals</li>
+                <li>Valuation</li>
+                <li>Growth</li>
+                <li>Sentiment</li>
+            </ul>
+            <div class="domain-note">No LLM required. Fully deterministic.</div>
+        </div>
+        <div class="domain-card value fade-up">
+            <div class="domain-header-row">
+                <div class="domain-name">Value</div>
+                <div class="domain-count">6 analysts</div>
+            </div>
+            <ul class="analyst-list">
+                <li>Buffett</li>
+                <li>Graham</li>
+                <li>Munger</li>
+                <li>Pabrai</li>
+                <li>Fisher</li>
+                <li>Damodaran</li>
+            </ul>
+            <div class="domain-note">LLM-augmented. Degrades to neutral without one.</div>
+        </div>
+        <div class="domain-card macro fade-up">
+            <div class="domain-header-row">
+                <div class="domain-name">Macro</div>
+                <div class="domain-count">7 analysts</div>
+            </div>
+            <ul class="analyst-list">
+                <li>Druckenmiller</li>
+                <li>Burry</li>
+                <li>Cathie Wood</li>
+                <li>Lynch</li>
+                <li>Ackman</li>
+                <li>Taleb</li>
+                <li>News Sentiment</li>
+            </ul>
+            <div class="domain-note">LLM-augmented. Contrarian + macro overlay.</div>
+        </div>
+    </div>
+</div>
+</section>
+
+<!-- DEMO -->
+<section id="demo" class="demo-section">
+<div class="container">
+    <div class="demo-inner">
+        <div class="demo-text">
+            <div class="section-label">Zero Configuration</div>
+            <h2 class="section-title">Run the demo in one command</h2>
+            <p class="section-desc" style="margin-bottom:1.5rem;">No API keys. No configuration files. Clone the repo, install dependencies, and run. You get a full 6-month backtest on AAPL, MSFT, and NVDA with an interactive HTML report.</p>
+            <a href="https://github.com/asalsali/covenant-hedge-fund" class="btn-primary">Get started</a>
+        </div>
+        <div class="demo-terminal">
+            <div class="terminal-bar">
+                <span class="terminal-dot"></span>
+                <span class="terminal-dot"></span>
+                <span class="terminal-dot"></span>
+            </div>
+            <div class="terminal-body"><span class="cmd">$ git clone https://github.com/asalsali/covenant-hedge-fund.git</span>
+<span class="cmd">$ cd covenant-hedge-fund</span>
+<span class="cmd">$ pip install -r requirements.txt</span>
+<span class="cmd">$ python demo.py</span>
+
+<span class="out">Covenant Hedge Fund -- Quick Demo
+==================================================
+
+Running 6-month backtest on AAPL, MSFT, NVDA
+(quant-only, no API keys needed)
+
+  Completed in <span class="highlight">2.3s</span>
+
+  Report saved to reports/backtest-report.html
+  Open it in your browser to see the full analysis.</span></div>
+        </div>
+    </div>
+</div>
+</section>
+
+<!-- COMPARISON -->
+<section id="compare">
+<div class="container">
+    <div class="section-label">Differentiation</div>
+    <h2 class="section-title">Governance over guesswork</h2>
+    <p class="section-desc">Most AI hedge fund projects treat LLMs as the decision-maker. This one treats them as one input into a governed pipeline.</p>
+
+    <div class="comparison">
+        <table>
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Covenant Hedge Fund</th>
+                    <th>Typical AI Hedge Fund</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>LLM required to trade</td>
+                    <td class="yes">No (quant-only mode)</td>
+                    <td class="no">Yes</td>
+                </tr>
+                <tr>
+                    <td>Decision determinism</td>
+                    <td class="yes">Same inputs = same outputs</td>
+                    <td class="no">LLM variance on every run</td>
+                </tr>
+                <tr>
+                    <td>Risk enforcement</td>
+                    <td class="yes">25 code-enforced rules</td>
+                    <td class="no">LLM-suggested limits</td>
+                </tr>
+                <tr>
+                    <td>Cost to run</td>
+                    <td class="yes">$0 (quant-only or Ollama)</td>
+                    <td class="no">Paid API keys required</td>
+                </tr>
+                <tr>
+                    <td>Dependencies</td>
+                    <td class="yes">~7 packages</td>
+                    <td class="no">LangChain + LangGraph + SDKs</td>
+                </tr>
+                <tr>
+                    <td>Decision traceability</td>
+                    <td class="yes">Full signal-to-trade audit trail</td>
+                    <td class="no">Opaque LLM reasoning</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+</section>
+
+<!-- PERFORMANCE -->
+<section id="performance">
+<div class="container">
+    <div class="section-label">Backtest Results</div>
+    <h2 class="section-title">320 trading days. 8 tickers. Full audit trail.</h2>
+    <p class="section-desc">Backtested across AAPL, MSFT, GOOGL, AMZN, NVDA, JPM, JNJ, and XOM with SPY as benchmark.</p>
+
+    <div class="steps">
+        <div class="step fade-up">
+            <div class="metric-value green" style="font-size:1.75rem;">+73.29%</div>
+            <div class="metric-label" style="margin-top:0.5rem;">Total Return</div>
+            <p style="margin-top:0.75rem; font-size:0.85rem; color:var(--text-muted);">Annualized: +54.39%</p>
+        </div>
+        <div class="step fade-up">
+            <div class="metric-value blue" style="font-size:1.75rem;">2.20 / 4.01</div>
+            <div class="metric-label" style="margin-top:0.5rem;">Sharpe / Sortino</div>
+            <p style="margin-top:0.75rem; font-size:0.85rem; color:var(--text-muted);">Risk-adjusted outperformance</p>
+        </div>
+        <div class="step fade-up">
+            <div class="metric-value green" style="font-size:1.75rem;">+36.82%</div>
+            <div class="metric-label" style="margin-top:0.5rem;">Alpha vs SPY</div>
+            <p style="margin-top:0.75rem; font-size:0.85rem; color:var(--text-muted);">SPY returned +36.47% same period</p>
+        </div>
+    </div>
+
+    <p style="margin-top:2rem; font-size:0.75rem; color:var(--text-muted); text-align:center;">Max drawdown: -15.06%. Past performance does not guarantee future results. This is a research tool, not investment advice.</p>
+</div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+<div class="container">
+    <div class="footer-links">
+        <a href="https://github.com/asalsali/covenant-hedge-fund">GitHub</a>
+        <a href="https://covenant.foundation">Covenant Framework</a>
+        <a href="https://github.com/asalsali/covenant-hedge-fund/blob/main/LICENSE">MIT License</a>
+    </div>
+    <p class="footer-note">Built on the Covenant Framework. Governance is not overhead -- it is the mechanism that makes autonomous decisions trustworthy.</p>
+</div>
+</footer>
+
+</body>
+</html>

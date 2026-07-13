@@ -6,8 +6,10 @@ call external APIs directly -- they receive data through this interface.
 Data source priority:
   1. Yahoo Finance via yfinance (free, no API key needed)
   2. financialdatasets.ai (paid, requires FINANCIAL_DATASETS_API_KEY)
+  3. CoinGecko (free, for cryptocurrency tickers)
 
 Set DATA_SOURCE=financialdatasets in .env to force the paid API.
+Crypto tickers (BTC, ETH, etc.) are auto-detected and routed to CoinGecko.
 """
 
 from __future__ import annotations
@@ -22,6 +24,13 @@ from typing import Any
 import httpx
 import yfinance as yf
 from dotenv import load_dotenv
+
+from src.data.crypto import (
+    cg_get_crypto_metrics,
+    cg_get_prices,
+    is_crypto,
+    resolve_coin_id,
+)
 
 load_dotenv()
 
@@ -312,6 +321,13 @@ def get_prices(
     if key in _cache:
         return _cache[key]
 
+    if is_crypto(ticker):
+        # Use yfinance with -USD suffix for crypto prices (no API key needed)
+        yf_ticker = f"{ticker.upper()}-USD"
+        result = _yf_get_prices(yf_ticker, start_date, end_date, interval)
+        _cache[key] = result
+        return result
+
     if _use_paid_api():
         params = {
             "ticker": ticker,
@@ -356,6 +372,10 @@ def get_financial_metrics(
     if key in _cache:
         return _cache[key]
 
+    if is_crypto(ticker):
+        _cache[key] = []
+        return []
+
     if _use_paid_api():
         params = {
             "ticker": ticker,
@@ -398,6 +418,10 @@ def search_line_items(
     if key in _cache:
         return _cache[key]
 
+    if is_crypto(ticker):
+        _cache[key] = []
+        return []
+
     if _use_paid_api():
         payload = {
             "tickers": [ticker],
@@ -438,6 +462,10 @@ def get_insider_trades(
     if key in _cache:
         return _cache[key]
 
+    if is_crypto(ticker):
+        _cache[key] = []
+        return []
+
     if _use_paid_api():
         params = {
             "ticker": ticker,
@@ -476,6 +504,10 @@ def get_company_news(
     if key in _cache:
         return _cache[key]
 
+    if is_crypto(ticker):
+        _cache[key] = []
+        return []
+
     if _use_paid_api():
         params = {
             "ticker": ticker,
@@ -505,6 +537,14 @@ def get_market_cap(
     Returns:
         Market cap in dollars, or None if unavailable.
     """
+    if is_crypto(ticker):
+        coin_id = resolve_coin_id(ticker)
+        if not coin_id:
+            return None
+        crypto_metrics = cg_get_crypto_metrics(coin_id)
+        cap = crypto_metrics.get("market_cap")
+        return float(cap) if cap is not None else None
+
     metrics = get_financial_metrics(ticker, end_date, period="quarterly", limit=1)
     if not metrics:
         return None

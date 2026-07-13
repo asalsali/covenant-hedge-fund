@@ -1,0 +1,468 @@
+"""Crypto-native analyst agents for the Covenant Hedge Fund.
+
+Four analysts specialized in digital asset analysis using CoinGecko
+data. Two are computation-only (quant domain), two are LLM-augmented
+(macro domain).
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from src.agents.base import BaseAnalyst
+from src.agents.value import _pad, _parse_llm_signal
+from src.llm import LLM_INSTRUCTION_SUFFIX, call_llm
+from src.models import AnalystSignal
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _to_float(val: Any) -> float | None:
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _clamp(conf: float) -> int:
+    return max(0, min(100, int(round(conf))))
+
+
+def _signal(score: float) -> str:
+    if score > 0.15:
+        return "bullish"
+    if score < -0.15:
+        return "bearish"
+    return "neutral"
+
+
+# ---------------------------------------------------------------------------
+# 1. OnChainAnalyst (quant, uses_llm=False)
+# ---------------------------------------------------------------------------
+
+class OnChainAnalyst(BaseAnalyst):
+    """On-chain supply dynamics analyst using CoinGecko metrics.
+
+    Analyzes supply scarcity, dilution risk, and market cap momentum
+    from crypto-specific data fields. Pure computation -- no LLM calls.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="onchain",
+            domain="quant",
+            philosophy=(
+                "Analyze crypto supply dynamics from on-chain data. "
+                "Evaluate circulating vs max supply ratios for scarcity, "
+                "market cap vs fully diluted valuation for dilution risk, "
+                "and 30-day price momentum for trend direction. "
+                "No LLM calls -- pure computation."
+            ),
+            uses_llm=False,
+        )
+
+    def analyze(
+        self,
+        tickers: list[str],
+        market_data: dict[str, Any],
+    ) -> dict[str, AnalystSignal]:
+        return {t: self._run(t, market_data.get(t, {})) for t in tickers}
+
+    def _run(self, ticker: str, data: dict) -> AnalystSignal:
+        cm = data.get("crypto_metrics", {})
+        if not cm:
+            return AnalystSignal(
+                signal="neutral", confidence=0,
+                reasoning=_pad("No crypto metrics available"),
+            )
+
+        sc, avail, reasons = [], 0, []
+        TP = 3
+
+        # Supply scarcity: circulating_supply / max_supply
+        circ = _to_float(cm.get("circulating_supply"))
+        max_s = _to_float(cm.get("max_supply"))
+        if circ is not None and max_s is not None and max_s > 0:
+            avail += 1
+            ratio = circ / max_s
+            if ratio > 0.8:
+                sc.append(1.0)
+                reasons.append(f"Supply {ratio:.0%} released, scarce")
+            elif ratio < 0.5:
+                sc.append(-0.5)
+                reasons.append(f"Supply {ratio:.0%} released, dilution ahead")
+            else:
+                sc.append((ratio - 0.65) / 0.15)
+                reasons.append(f"Supply {ratio:.0%} released")
+
+        # Dilution risk: market_cap / fully_diluted_valuation
+        mc = _to_float(cm.get("market_cap"))
+        fdv = _to_float(cm.get("fully_diluted_valuation"))
+        if mc is not None and fdv is not None and fdv > 0:
+            avail += 1
+            mc_fdv = mc / fdv
+            if mc_fdv < 0.5:
+                sc.append(-1.0)
+                reasons.append(f"MC/FDV {mc_fdv:.0%}, massive unlock risk")
+            elif mc_fdv > 0.8:
+                sc.append(0.5)
+                reasons.append(f"MC/FDV {mc_fdv:.0%}, limited dilution")
+            else:
+                sc.append((mc_fdv - 0.65) / 0.15)
+
+        # Market cap momentum: 30d price change
+        pct_30d = _to_float(cm.get("price_change_percentage_30d"))
+        if pct_30d is not None:
+            avail += 1
+            norm = max(-1.0, min(1.0, pct_30d / 30.0))
+            sc.append(norm)
+            if abs(pct_30d) > 10:
+                reasons.append(f"30d {pct_30d:+.1f}%")
+
+        if not sc:
+            return AnalystSignal(
+                signal="neutral", confidence=5,
+                reasoning=_pad("Insufficient on-chain data"),
+            )
+
+        comp = sum(sc) / len(sc)
+        conf = _clamp(abs(comp) * 80 * avail / TP)
+        r = reasons[0] if reasons else "Mixed on-chain signals"
+        return AnalystSignal(
+            signal=_signal(comp), confidence=conf,
+            reasoning=_pad(f"{r} ({avail}/{TP} factors)"),
+        )
+
+
+# ---------------------------------------------------------------------------
+# 2. MomentumCryptoAnalyst (quant, uses_llm=False)
+# ---------------------------------------------------------------------------
+
+class MomentumCryptoAnalyst(BaseAnalyst):
+    """Multi-timeframe crypto momentum analyst with ATH/ATL distance.
+
+    Evaluates momentum alignment across 7d/30d/200d windows,
+    proximity to all-time high/low, and momentum acceleration.
+    Pure computation -- no LLM calls.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="crypto_momentum",
+            domain="quant",
+            philosophy=(
+                "Compute multi-timeframe crypto momentum signals. "
+                "Assess 7d/30d/200d price change alignment, distance "
+                "from all-time high and low, and short vs long term "
+                "momentum acceleration. "
+                "No LLM calls -- pure computation."
+            ),
+            uses_llm=False,
+        )
+
+    def analyze(
+        self,
+        tickers: list[str],
+        market_data: dict[str, Any],
+    ) -> dict[str, AnalystSignal]:
+        return {t: self._run(t, market_data.get(t, {})) for t in tickers}
+
+    def _run(self, ticker: str, data: dict) -> AnalystSignal:
+        cm = data.get("crypto_metrics", {})
+        if not cm:
+            return AnalystSignal(
+                signal="neutral", confidence=0,
+                reasoning=_pad("No crypto metrics available"),
+            )
+
+        sc, avail, reasons = [], 0, []
+        TP = 3
+
+        # Momentum alignment: 7d, 30d, 200d
+        pct_7d = _to_float(cm.get("price_change_percentage_7d"))
+        pct_30d = _to_float(cm.get("price_change_percentage_30d"))
+        pct_200d = _to_float(cm.get("price_change_percentage_200d"))
+
+        timeframes = [v for v in [pct_7d, pct_30d, pct_200d] if v is not None]
+        if len(timeframes) >= 2:
+            avail += 1
+            pos_count = sum(1 for v in timeframes if v > 0)
+            neg_count = sum(1 for v in timeframes if v < 0)
+            total = len(timeframes)
+
+            if pos_count == total:
+                sc.append(1.0)
+                reasons.append("All timeframes bullish")
+            elif neg_count == total:
+                sc.append(-1.0)
+                reasons.append("All timeframes bearish")
+            else:
+                alignment = (pos_count - neg_count) / total
+                sc.append(alignment)
+                reasons.append("Mixed momentum alignment")
+
+        # ATH distance
+        ath_pct = _to_float(cm.get("ath_change_percentage"))
+        if ath_pct is not None:
+            avail += 1
+            if ath_pct > -20:
+                sc.append(-0.5)
+                reasons.append(f"ATH dist {ath_pct:.0f}%, distribution risk")
+            elif ath_pct < -80:
+                if pct_7d is not None and pct_7d > 0:
+                    sc.append(0.8)
+                    reasons.append(f"ATH dist {ath_pct:.0f}%, recovery signal")
+                else:
+                    sc.append(-0.3)
+                    reasons.append(f"ATH dist {ath_pct:.0f}%, no recovery yet")
+            else:
+                norm = (ath_pct + 50) / 30
+                sc.append(max(-1.0, min(1.0, norm)))
+
+        # Momentum acceleration: short-term (7d) vs long-term (200d)
+        if pct_7d is not None and pct_200d is not None and abs(pct_200d) > 0.01:
+            avail += 1
+            rate_7d = pct_7d / 7.0
+            rate_200d = pct_200d / 200.0
+            if rate_200d != 0:
+                accel = (rate_7d - rate_200d) / max(abs(rate_200d), 0.01)
+                accel_clamped = max(-1.0, min(1.0, accel / 5.0))
+                sc.append(accel_clamped)
+                if accel > 2:
+                    reasons.append("Momentum accelerating")
+                elif accel < -2:
+                    reasons.append("Momentum decelerating")
+
+        if not sc:
+            return AnalystSignal(
+                signal="neutral", confidence=5,
+                reasoning=_pad("Insufficient momentum data"),
+            )
+
+        comp = sum(sc) / len(sc)
+        conf = _clamp(abs(comp) * 80 * avail / TP)
+        r = reasons[0] if reasons else "Mixed momentum signals"
+        return AnalystSignal(
+            signal=_signal(comp), confidence=conf,
+            reasoning=_pad(f"{r} ({avail}/{TP} factors)"),
+        )
+
+
+# ---------------------------------------------------------------------------
+# 3. CryptoMacroAnalyst (macro, uses_llm=True)
+# ---------------------------------------------------------------------------
+
+def _extract_crypto_macro_facts(ticker: str, data: dict) -> dict:
+    """Extract crypto macro facts for LLM analysis."""
+    cm = data.get("crypto_metrics", {})
+    prices = data.get("prices", [])
+    closes = [p["close"] for p in prices if p.get("close") is not None]
+    current_price = closes[-1] if closes else None
+
+    mc = _to_float(cm.get("market_cap"))
+    vol = _to_float(cm.get("total_volume"))
+    vol_mc_ratio = None
+    if mc and vol and mc > 0:
+        vol_mc_ratio = round(vol / mc, 4)
+
+    return {
+        "ticker": ticker,
+        "current_price": current_price,
+        "market_cap_rank": cm.get("market_cap_rank"),
+        "market_cap": mc,
+        "total_volume": vol,
+        "volume_to_market_cap": vol_mc_ratio,
+        "circulating_supply": _to_float(cm.get("circulating_supply")),
+        "total_supply": _to_float(cm.get("total_supply")),
+        "max_supply": _to_float(cm.get("max_supply")),
+        "price_change_7d": _to_float(cm.get("price_change_percentage_7d")),
+        "price_change_14d": _to_float(cm.get("price_change_percentage_14d")),
+        "price_change_30d": _to_float(cm.get("price_change_percentage_30d")),
+        "price_change_60d": _to_float(cm.get("price_change_percentage_60d")),
+        "price_change_200d": _to_float(cm.get("price_change_percentage_200d")),
+        "price_change_1y": _to_float(cm.get("price_change_percentage_1y")),
+        "ath": _to_float(cm.get("ath")),
+        "ath_change_percentage": _to_float(cm.get("ath_change_percentage")),
+        "atl": _to_float(cm.get("atl")),
+        "atl_change_percentage": _to_float(cm.get("atl_change_percentage")),
+    }
+
+
+class CryptoMacroAnalyst(BaseAnalyst):
+    """Macro strategist specializing in digital assets.
+
+    Considers crypto market cycles, institutional adoption, protocol
+    utility, and macro liquidity conditions. LLM-augmented analysis.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="crypto_macro",
+            domain="macro",
+            philosophy=(
+                "You are a macro strategist specializing in digital assets. "
+                "Analyze the asset considering crypto market cycles (accumulation, "
+                "markup, distribution, markdown), institutional adoption trends, "
+                "protocol utility and network effects, and macro liquidity "
+                "conditions (Fed policy, DXY strength, risk appetite). Evaluate "
+                "whether the asset is positioned for the current market regime. "
+                "Consider Bitcoin dominance cycles and alt-season rotation. "
+                "Assess regulatory risk and geopolitical headwinds or tailwinds "
+                "for the crypto sector. Weight on-chain activity and developer "
+                "ecosystem health as leading indicators of fundamental value."
+            ),
+            uses_llm=True,
+        )
+
+    def analyze(
+        self,
+        tickers: list[str],
+        market_data: dict[str, Any],
+    ) -> dict[str, AnalystSignal]:
+        system_prompt = self.philosophy + LLM_INSTRUCTION_SUFFIX
+        results: dict[str, AnalystSignal] = {}
+
+        for ticker in tickers:
+            data = market_data.get(ticker, {})
+            facts = _extract_crypto_macro_facts(ticker, data)
+
+            meaningful = [k for k, v in facts.items()
+                         if k != "ticker" and v is not None]
+            if not meaningful:
+                results[ticker] = AnalystSignal(
+                    signal="neutral", confidence=0,
+                    reasoning=_pad("No crypto data available"),
+                )
+                continue
+
+            user_prompt = (
+                f"Analyze {ticker} as a digital asset. "
+                f"Here are the crypto market facts:\n"
+                f"{json.dumps(facts, indent=2)}"
+            )
+            response = call_llm(system_prompt, user_prompt)
+            results[ticker] = _parse_llm_signal(response)
+
+        return results
+
+
+# ---------------------------------------------------------------------------
+# 4. TokenomicsAnalyst (macro, uses_llm=True)
+# ---------------------------------------------------------------------------
+
+def _extract_tokenomics_facts(ticker: str, data: dict) -> dict:
+    """Extract tokenomics-specific facts for LLM analysis."""
+    cm = data.get("crypto_metrics", {})
+
+    circ = _to_float(cm.get("circulating_supply"))
+    total = _to_float(cm.get("total_supply"))
+    max_s = _to_float(cm.get("max_supply"))
+    mc = _to_float(cm.get("market_cap"))
+    fdv = _to_float(cm.get("fully_diluted_valuation"))
+    vol = _to_float(cm.get("total_volume"))
+
+    # Compute supply ratios
+    circ_total = round(circ / total, 4) if circ and total and total > 0 else None
+    circ_max = round(circ / max_s, 4) if circ and max_s and max_s > 0 else None
+    total_max = round(total / max_s, 4) if total and max_s and max_s > 0 else None
+    fdv_mc_ratio = round(fdv / mc, 4) if fdv and mc and mc > 0 else None
+    vol_mc_ratio = round(vol / mc, 4) if vol and mc and mc > 0 else None
+
+    return {
+        "ticker": ticker,
+        "circulating_supply": circ,
+        "total_supply": total,
+        "max_supply": max_s,
+        "circulating_to_total_ratio": circ_total,
+        "circulating_to_max_ratio": circ_max,
+        "total_to_max_ratio": total_max,
+        "market_cap": mc,
+        "fully_diluted_valuation": fdv,
+        "fdv_to_market_cap_ratio": fdv_mc_ratio,
+        "total_volume": vol,
+        "volume_to_market_cap": vol_mc_ratio,
+        "price_change_7d": _to_float(cm.get("price_change_percentage_7d")),
+        "price_change_30d": _to_float(cm.get("price_change_percentage_30d")),
+        "price_change_200d": _to_float(cm.get("price_change_percentage_200d")),
+        "price_change_1y": _to_float(cm.get("price_change_percentage_1y")),
+    }
+
+
+class TokenomicsAnalyst(BaseAnalyst):
+    """Token economics evaluator.
+
+    Assesses supply scarcity, inflation risk, velocity metrics, and
+    store-of-value properties. LLM-augmented analysis.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="tokenomics",
+            domain="macro",
+            philosophy=(
+                "You are a tokenomics specialist. Evaluate the token's economic "
+                "design: supply scarcity (circulating vs max supply, emission "
+                "schedule implications), inflation risk (FDV vs market cap gap "
+                "indicating future dilution from vesting/unlocks), velocity "
+                "metrics (volume/market cap as a proxy for transactional demand "
+                "vs speculative holding), and store-of-value properties "
+                "(price stability, supply cap credibility, Lindy effect of the "
+                "protocol). Compare the token's economic structure to sound "
+                "money principles: scarcity, durability, divisibility, "
+                "verifiability. Flag tokens with aggressive unlock schedules, "
+                "high inflation rates, or velocity patterns suggesting "
+                "speculative churn over genuine utility demand."
+            ),
+            uses_llm=True,
+        )
+
+    def analyze(
+        self,
+        tickers: list[str],
+        market_data: dict[str, Any],
+    ) -> dict[str, AnalystSignal]:
+        system_prompt = self.philosophy + LLM_INSTRUCTION_SUFFIX
+        results: dict[str, AnalystSignal] = {}
+
+        for ticker in tickers:
+            data = market_data.get(ticker, {})
+            facts = _extract_tokenomics_facts(ticker, data)
+
+            meaningful = [k for k, v in facts.items()
+                         if k != "ticker" and v is not None]
+            if not meaningful:
+                results[ticker] = AnalystSignal(
+                    signal="neutral", confidence=0,
+                    reasoning=_pad("No tokenomics data available"),
+                )
+                continue
+
+            user_prompt = (
+                f"Evaluate {ticker}'s tokenomics. "
+                f"Here are the token economic facts:\n"
+                f"{json.dumps(facts, indent=2)}"
+            )
+            response = call_llm(system_prompt, user_prompt)
+            results[ticker] = _parse_llm_signal(response)
+
+        return results
+
+
+# ---------------------------------------------------------------------------
+# Exports
+# ---------------------------------------------------------------------------
+
+CRYPTO_ANALYSTS: list[type[BaseAnalyst]] = [
+    OnChainAnalyst,
+    MomentumCryptoAnalyst,
+]
+
+CRYPTO_LLM_ANALYSTS: list[type[BaseAnalyst]] = [
+    CryptoMacroAnalyst,
+    TokenomicsAnalyst,
+]

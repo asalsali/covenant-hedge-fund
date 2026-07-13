@@ -458,7 +458,8 @@ def _build_signal_heatmap(signals: dict[str, Any], analysts: list[dict[str, Any]
                 sig = sig_data["signal"]
                 conf = sig_data["confidence"]
                 bg = _signal_color(sig, conf)
-                label = f"{sig[0].upper()} {conf}"
+                abbrev = {"bullish": "BL", "bearish": "BR", "neutral": "N"}.get(sig, sig[0].upper())
+                label = f"{abbrev} {conf}"
                 html += f'<td style="background: {bg};" title="{sig} {conf}%">{label}</td>'
             else:
                 html += '<td style="background: rgba(148, 163, 184, 0.05);">--</td>'
