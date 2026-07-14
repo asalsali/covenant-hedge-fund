@@ -100,23 +100,36 @@ class BacktestEngine:
                 AnalystClass() for AnalystClass in CRYPTO_ANALYSTS
             )
 
-        # LLM lite: instantiate the 4 chosen LLM personas
+        # LLM lite: instantiate LLM personas
         self.llm_analysts: list = []
         self.llm_rebalance_indices: set[int] = set()
+        all_crypto = has_crypto and all(is_crypto(t) for t in self.tickers)
         if llm_lite:
-            from src.agents.value import BuffettAnalyst, GrahamAnalyst
-            from src.agents.macro import DruckenmillerAnalyst, TalebAnalyst
-            self.llm_analysts = [
-                BuffettAnalyst(),
-                GrahamAnalyst(),
-                DruckenmillerAnalyst(),
-                TalebAnalyst(),
-            ]
-            # Add crypto-specialized LLM analysts when any ticker is crypto
-            if has_crypto:
+            if all_crypto:
+                # Crypto-only: skip value investors (Graham/Buffett auto-fail
+                # without financial statements). Use crypto-native + compatible macro.
+                from src.agents.macro import DruckenmillerAnalyst, TalebAnalyst
+                self.llm_analysts = [
+                    DruckenmillerAnalyst(),
+                    TalebAnalyst(),
+                ]
                 self.llm_analysts.extend(
                     AnalystClass() for AnalystClass in CRYPTO_LLM_ANALYSTS
                 )
+            else:
+                from src.agents.value import BuffettAnalyst, GrahamAnalyst
+                from src.agents.macro import DruckenmillerAnalyst, TalebAnalyst
+                self.llm_analysts = [
+                    BuffettAnalyst(),
+                    GrahamAnalyst(),
+                    DruckenmillerAnalyst(),
+                    TalebAnalyst(),
+                ]
+                # Add crypto-specialized LLM analysts for mixed portfolios
+                if has_crypto:
+                    self.llm_analysts.extend(
+                        AnalystClass() for AnalystClass in CRYPTO_LLM_ANALYSTS
+                    )
         # Track LLM signal diffs for the comparison report
         self.llm_signal_log: list[dict[str, Any]] = []
 

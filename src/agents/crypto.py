@@ -454,6 +454,215 @@ class TokenomicsAnalyst(BaseAnalyst):
 
 
 # ---------------------------------------------------------------------------
+# 5. KwokAnalyst (macro, uses_llm=True) — Dom Kwok
+# ---------------------------------------------------------------------------
+
+class KwokAnalyst(BaseAnalyst):
+    """Institutional adoption & network effects analyst (Dom Kwok style).
+
+    Ex-Goldman/Blackstone perspective. Evaluates crypto through the lens
+    of institutional capital flows, mass adoption curves, and network
+    effects. The crypto growth investor.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="kwok",
+            domain="macro",
+            philosophy=(
+                "You are an institutional crypto analyst with a Goldman Sachs "
+                "and Blackstone background, modeled after Dom Kwok. Evaluate "
+                "digital assets through the lens of institutional capital flows "
+                "and mass adoption. Key questions: Is institutional money "
+                "flowing into this asset (ETF approvals, custody solutions, "
+                "treasury adoption)? What does the adoption curve look like — "
+                "what percentage of potential users are onboard? Assess network "
+                "effects: does rising price attract developers who build "
+                "applications that drive more usage? Consider regulatory clarity "
+                "as a catalyst — clearer regulation unlocks institutional capital. "
+                "Evaluate cross-border payment potential and real-world utility "
+                "beyond speculation. Be bullish when institutional infrastructure "
+                "is building around an asset, bearish when adoption stalls or "
+                "regulatory headwinds threaten institutional participation. "
+                "Think in 3-5 year adoption arcs, not daily price action."
+            ),
+            uses_llm=True,
+        )
+
+    def analyze(
+        self,
+        tickers: list[str],
+        market_data: dict[str, Any],
+    ) -> dict[str, AnalystSignal]:
+        system_prompt = self.philosophy + LLM_INSTRUCTION_SUFFIX
+        results: dict[str, AnalystSignal] = {}
+
+        for ticker in tickers:
+            data = market_data.get(ticker, {})
+            facts = _extract_crypto_macro_facts(ticker, data)
+
+            meaningful = [k for k, v in facts.items()
+                         if k != "ticker" and v is not None]
+            if not meaningful:
+                results[ticker] = AnalystSignal(
+                    signal="neutral", confidence=0,
+                    reasoning=_pad("No crypto data available"),
+                )
+                continue
+
+            user_prompt = (
+                f"Evaluate {ticker} from an institutional adoption perspective. "
+                f"Here are the crypto market facts:\n"
+                f"{json.dumps(facts, indent=2)}"
+            )
+            response = call_llm(system_prompt, user_prompt)
+            results[ticker] = _parse_llm_signal(response)
+
+        return results
+
+
+# ---------------------------------------------------------------------------
+# 6. WooAnalyst (macro, uses_llm=True) — Willy Woo
+# ---------------------------------------------------------------------------
+
+class WooAnalyst(BaseAnalyst):
+    """On-chain data analyst (Willy Woo style).
+
+    Translates blockchain data into views on network health, user
+    behavior, and market cycle positioning. Pioneer of on-chain
+    analysis as a discipline.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="woo",
+            domain="macro",
+            philosophy=(
+                "You are an on-chain data analyst modeled after Willy Woo, "
+                "a pioneer of on-chain analysis. Evaluate digital assets by "
+                "interpreting blockchain-derived metrics as indicators of "
+                "network health and market cycle positioning. Key frameworks: "
+                "NVT ratio (network value to transaction volume — high NVT "
+                "suggests overvaluation, low suggests undervaluation). Use "
+                "volume/market cap as a proxy for on-chain velocity when "
+                "direct on-chain data is unavailable. Assess supply dynamics: "
+                "circulating vs max supply indicates holder conviction and "
+                "scarcity. Track market cap rank momentum — rising rank with "
+                "rising price confirms genuine demand, rising price with "
+                "falling rank suggests broader market lift. Evaluate ATH "
+                "distance as a cycle indicator: assets >50% below ATH in "
+                "a rising market are potential recovery plays; assets near "
+                "ATH with declining volume signal distribution. Think in "
+                "market cycles: accumulation, markup, distribution, markdown. "
+                "Where is this asset in its cycle based on the data?"
+            ),
+            uses_llm=True,
+        )
+
+    def analyze(
+        self,
+        tickers: list[str],
+        market_data: dict[str, Any],
+    ) -> dict[str, AnalystSignal]:
+        system_prompt = self.philosophy + LLM_INSTRUCTION_SUFFIX
+        results: dict[str, AnalystSignal] = {}
+
+        for ticker in tickers:
+            data = market_data.get(ticker, {})
+            facts = _extract_crypto_macro_facts(ticker, data)
+
+            meaningful = [k for k, v in facts.items()
+                         if k != "ticker" and v is not None]
+            if not meaningful:
+                results[ticker] = AnalystSignal(
+                    signal="neutral", confidence=0,
+                    reasoning=_pad("No crypto data available"),
+                )
+                continue
+
+            user_prompt = (
+                f"Analyze {ticker}'s on-chain health and cycle positioning. "
+                f"Here are the network and market facts:\n"
+                f"{json.dumps(facts, indent=2)}"
+            )
+            response = call_llm(system_prompt, user_prompt)
+            results[ticker] = _parse_llm_signal(response)
+
+        return results
+
+
+# ---------------------------------------------------------------------------
+# 7. PlanBAnalyst (macro, uses_llm=True) — PlanB
+# ---------------------------------------------------------------------------
+
+class PlanBAnalyst(BaseAnalyst):
+    """Stock-to-flow & cycle-based scarcity analyst (PlanB style).
+
+    Evaluates crypto through supply scarcity models, halving cycles,
+    and stock-to-flow ratios. Quantitative scarcity as the primary
+    value driver.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="planb",
+            domain="macro",
+            philosophy=(
+                "You are a quantitative scarcity analyst modeled after PlanB, "
+                "creator of the Bitcoin Stock-to-Flow model. Evaluate digital "
+                "assets primarily through supply scarcity and monetary hardness. "
+                "Key frameworks: Stock-to-flow ratio — existing supply divided "
+                "by new annual production. Higher S2F = harder money = higher "
+                "value (gold S2F ~62, Bitcoin post-halving ~120). Assess "
+                "circulating/max supply ratio as a scarcity proxy. Assets with "
+                "hard caps (like Bitcoin's 21M) are fundamentally different "
+                "from inflationary tokens. Evaluate cycle positioning relative "
+                "to supply events (halvings, unlock schedules). Post-halving "
+                "periods historically precede price appreciation due to supply "
+                "shock. Compare the asset's scarcity profile to gold and other "
+                "monetary assets. Be bullish when: hard supply cap exists, "
+                "high percentage of supply already circulating, approaching or "
+                "recently past a supply reduction event. Be bearish when: no "
+                "supply cap, high inflation rate, large unlocks ahead "
+                "(FDV >> market cap). Price should converge toward scarcity-"
+                "implied value over full market cycles."
+            ),
+            uses_llm=True,
+        )
+
+    def analyze(
+        self,
+        tickers: list[str],
+        market_data: dict[str, Any],
+    ) -> dict[str, AnalystSignal]:
+        system_prompt = self.philosophy + LLM_INSTRUCTION_SUFFIX
+        results: dict[str, AnalystSignal] = {}
+
+        for ticker in tickers:
+            data = market_data.get(ticker, {})
+            facts = _extract_tokenomics_facts(ticker, data)
+
+            meaningful = [k for k, v in facts.items()
+                         if k != "ticker" and v is not None]
+            if not meaningful:
+                results[ticker] = AnalystSignal(
+                    signal="neutral", confidence=0,
+                    reasoning=_pad("No scarcity data available"),
+                )
+                continue
+
+            user_prompt = (
+                f"Evaluate {ticker}'s scarcity profile and cycle positioning. "
+                f"Here are the supply and market facts:\n"
+                f"{json.dumps(facts, indent=2)}"
+            )
+            response = call_llm(system_prompt, user_prompt)
+            results[ticker] = _parse_llm_signal(response)
+
+        return results
+
+
+# ---------------------------------------------------------------------------
 # Exports
 # ---------------------------------------------------------------------------
 
@@ -465,4 +674,7 @@ CRYPTO_ANALYSTS: list[type[BaseAnalyst]] = [
 CRYPTO_LLM_ANALYSTS: list[type[BaseAnalyst]] = [
     CryptoMacroAnalyst,
     TokenomicsAnalyst,
+    KwokAnalyst,
+    WooAnalyst,
+    PlanBAnalyst,
 ]
