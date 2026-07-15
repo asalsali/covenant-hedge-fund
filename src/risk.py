@@ -265,6 +265,69 @@ def compute_correlation(
 
 
 # ---------------------------------------------------------------------------
+# Correlation-based exposure caps
+# ---------------------------------------------------------------------------
+
+
+def compute_correlation_cap(
+    prices: dict[str, list[float]],
+    threshold: float = 0.7,
+    window: int = 60,
+) -> dict[str, float]:
+    """Compute per-ticker position limit multipliers based on correlation.
+
+    For each ticker, counts how many other tickers have a pairwise
+    correlation above ``threshold``. The more highly-correlated peers
+    a ticker has, the lower its multiplier -- capping aggregate
+    exposure to correlated clusters.
+
+    Multiplier schedule:
+        0 correlated peers  -> 1.00 (no reduction)
+        1 correlated peer   -> 0.80
+        2 correlated peers  -> 0.60
+        3+ correlated peers -> 0.50
+
+    Args:
+        prices: Mapping of ticker -> list of daily closing prices.
+        threshold: Correlation above which two tickers are considered
+            "highly correlated". Default 0.7.
+        window: Lookback window for correlation computation.
+
+    Returns:
+        Dict mapping ticker -> multiplier (0.0 to 1.0).
+    """
+    tickers = sorted(prices.keys())
+
+    if len(tickers) < 2:
+        return {t: 1.0 for t in tickers}
+
+    # Reuse existing correlation computation
+    corr_metrics = compute_correlation(prices, window=window)
+    matrix = corr_metrics.correlation_matrix
+
+    result: dict[str, float] = {}
+    for ticker in tickers:
+        correlated_count = 0
+        for other in tickers:
+            if other == ticker:
+                continue
+            corr_val = matrix.get(ticker, {}).get(other, 0.0)
+            if abs(corr_val) > threshold:
+                correlated_count += 1
+
+        if correlated_count == 0:
+            result[ticker] = 1.00
+        elif correlated_count == 1:
+            result[ticker] = 0.80
+        elif correlated_count == 2:
+            result[ticker] = 0.60
+        else:
+            result[ticker] = 0.50
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Position limits
 # ---------------------------------------------------------------------------
 

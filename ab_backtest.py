@@ -12,12 +12,9 @@ Usage:
 No arguments required. Defaults: AAPL/MSFT/NVDA, 15-month lookback,
 $100k initial capital.
 
-Run B requires at least one LLM provider:
-  - Ollama running locally (free, highest priority), OR
-  - ANTHROPIC_API_KEY environment variable, OR
-  - OPENAI_API_KEY environment variable
-If no LLM is available, Run B will produce neutral/0 LLM signals
-(graceful degradation) and results will match Run A.
+Run B requires Ollama running locally (free).
+If Ollama is not available, Run B will produce neutral/0 LLM signals
+(quant-only mode) and results will match Run A.
 """
 
 from __future__ import annotations
@@ -247,20 +244,12 @@ def main() -> None:
     except Exception:
         pass
 
-    has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
-    has_openai = bool(os.environ.get("OPENAI_API_KEY"))
-
     if has_ollama:
         print("  LLM provider: Ollama (local)")
-    elif has_anthropic:
-        print("  LLM provider: Anthropic API")
-    elif has_openai:
-        print("  LLM provider: OpenAI API")
     else:
-        print("  WARNING: No LLM provider available.")
-        print("  Run B will use graceful degradation (neutral LLM signals).")
-        print("  Results will likely match Run A.")
-        print("  To enable LLM: start Ollama locally, or set ANTHROPIC_API_KEY / OPENAI_API_KEY.")
+        print("  WARNING: Ollama not available -- quant-only mode.")
+        print("  Run B will use neutral LLM signals. Results will match Run A.")
+        print("  To enable LLM: install and start Ollama (https://ollama.com).")
     print()
 
     from src.backtest import BacktestEngine

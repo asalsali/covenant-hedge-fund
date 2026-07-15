@@ -17,6 +17,7 @@ from src.agents.parallel import run_analysts_parallel
 from src.agents.quant import QUANT_ANALYSTS
 from src.agents.crypto import CRYPTO_ANALYSTS, CRYPTO_LLM_ANALYSTS
 from src.data.api import (
+    DataFetchError,
     clear_cache,
     get_financial_metrics,
     get_insider_trades,
@@ -29,6 +30,7 @@ from src.portfolio import Portfolio
 from src.risk import (
     compute_allowed_actions,
     compute_correlation,
+    compute_correlation_cap,
     compute_position_limit,
     compute_volatility,
 )
@@ -41,6 +43,7 @@ from src.risk import (
 LOOKBACK_WINDOW = 60        # Trading days needed before first trade
 REBALANCE_INTERVAL = 5      # Run analysis every N trading days
 QUORUM_THRESHOLD = 3        # Minimum non-neutral signals for action
+CRYPTO_QUORUM_THRESHOLD = 2  # Crypto quant-only: 3 analysts, 67% floor
 SCORE_THRESHOLD = 0.3       # Normalized score threshold for action
 BENCHMARK_TICKER = "SPY"
 
@@ -202,6 +205,8 @@ class BacktestEngine:
                     )
                     print(f"  {ticker}: {len(prices)} price bars loaded")
 
+            except DataFetchError as e:
+                print(f"  ERROR [DataFetchError]: {e}")
             except Exception as e:
                 print(f"  WARNING: Failed to fetch data for {ticker}: {e}")
 
@@ -281,6 +286,7 @@ class BacktestEngine:
         # --- Risk calculations ---
         vol_metrics = compute_volatility(prices_dict)
         corr_metrics = compute_correlation(prices_dict)
+        corr_caps = compute_correlation_cap(prices_dict)
 
         portfolio_value = self.portfolio.compute_portfolio_value(current_prices)
 
@@ -293,6 +299,11 @@ class BacktestEngine:
             limit = compute_position_limit(
                 ticker, portfolio_value, vol_metrics[ticker], corr_metrics,
             )
+            # Apply correlation-based exposure cap
+            cap_mult = corr_caps.get(ticker, 1.0)
+            if cap_mult < 1.0:
+                limit.final_pct = round(limit.final_pct * cap_mult, 4)
+                limit.max_notional = round(portfolio_value * limit.final_pct, 2)
             position_limits[ticker] = limit
             allowed = compute_allowed_actions(
                 ticker, self.portfolio.state, limit,
@@ -310,10 +321,11 @@ class BacktestEngine:
                 if sig.signal != "neutral"
             ]
 
-            if len(non_neutral) < QUORUM_THRESHOLD:
+            quorum = CRYPTO_QUORUM_THRESHOLD if is_crypto(ticker) else QUORUM_THRESHOLD
+            if len(non_neutral) < quorum:
                 decisions[ticker] = {
                     "action": "hold", "quantity": 0,
-                    "reasoning": f"Quorum not met: {len(non_neutral)}/{QUORUM_THRESHOLD}",
+                    "reasoning": f"Quorum not met: {len(non_neutral)}/{quorum}",
                     "weighted_score": 0.0,
                 }
                 continue
@@ -541,6 +553,7 @@ class BacktestEngine:
         # --- Risk calculations (identical to quant-only path) ---
         vol_metrics = compute_volatility(prices_dict)
         corr_metrics = compute_correlation(prices_dict)
+        corr_caps = compute_correlation_cap(prices_dict)
 
         portfolio_value = self.portfolio.compute_portfolio_value(current_prices)
 
@@ -553,6 +566,11 @@ class BacktestEngine:
             limit = compute_position_limit(
                 ticker, portfolio_value, vol_metrics[ticker], corr_metrics,
             )
+            # Apply correlation-based exposure cap
+            cap_mult = corr_caps.get(ticker, 1.0)
+            if cap_mult < 1.0:
+                limit.final_pct = round(limit.final_pct * cap_mult, 4)
+                limit.max_notional = round(portfolio_value * limit.final_pct, 2)
             position_limits[ticker] = limit
             allowed = compute_allowed_actions(
                 ticker, self.portfolio.state, limit,
@@ -570,10 +588,11 @@ class BacktestEngine:
                 if sig.signal != "neutral"
             ]
 
-            if len(non_neutral) < QUORUM_THRESHOLD:
+            quorum = CRYPTO_QUORUM_THRESHOLD if is_crypto(ticker) else QUORUM_THRESHOLD
+            if len(non_neutral) < quorum:
                 decisions[ticker] = {
                     "action": "hold", "quantity": 0,
-                    "reasoning": f"Quorum not met: {len(non_neutral)}/{QUORUM_THRESHOLD}",
+                    "reasoning": f"Quorum not met: {len(non_neutral)}/{quorum}",
                     "weighted_score": 0.0,
                 }
                 continue
@@ -916,6 +935,15 @@ class BacktestEngine:
             spy_return=spy_return,
             realized_pnl=realized_pnl,
         )
+
+        # -- Print LLM cache stats --
+        from src.llm import get_cache_stats
+        cache_stats = get_cache_stats()
+        if cache_stats["hits"] > 0 or cache_stats["misses"] > 0:
+            total = cache_stats["hits"] + cache_stats["misses"]
+            hit_pct = (cache_stats["hits"] / total * 100) if total > 0 else 0
+            print(f"\n  LLM Cache: {cache_stats['hits']} hits, "
+                  f"{cache_stats['misses']} misses ({hit_pct:.0f}% hit rate)")
 
         # -- Print LLM diversity report if applicable --
         if self.llm_lite and self.llm_signal_log:

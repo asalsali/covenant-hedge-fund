@@ -3,640 +3,737 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Covenant Hedge Fund - AI-Governed Portfolio Analysis</title>
-<meta name="description" content="18-analyst AI portfolio system with deterministic risk management. +73% return, Sharpe 2.20, +37% alpha vs SPY.">
+<title>Covenant Hedge Fund — AI-Governed Portfolio Analysis</title>
+<meta name="description" content="18-analyst AI portfolio system with deterministic risk management. +73% return, Sharpe 2.20, +37% alpha vs SPY. Powered by free open-source models.">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 :root {
-    --bg-primary: #0f1117;
-    --bg-secondary: #1a1d29;
-    --bg-card: #21253a;
-    --bg-hover: #2a2f45;
-    --text-primary: #e2e8f0;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
-    --border: #2d3348;
-    --accent: #3b82f6;
-    --positive: #22c55e;
-    --negative: #ef4444;
-    --warning: #f59e0b;
+  --bg: #fafaf9;
+  --bg2: #ffffff;
+  --bg3: #f5f5f4;
+  --dark: #0c0a09;
+  --dark2: #1c1917;
+  --dark3: #292524;
+  --tx: #0c0a09;
+  --tx2: #57534e;
+  --tx3: #a8a29e;
+  --bdr: #e7e5e4;
+  --bdr2: #d6d3d1;
+  --green: #16a34a;
+  --green-bg: #f0fdf4;
+  --green-bdr: #bbf7d0;
+  --blue: #2563eb;
+  --blue-bg: #eff6ff;
+  --blue-bdr: #bfdbfe;
+  --amber: #d97706;
+  --amber-bg: #fffbeb;
+  --amber-bdr: #fde68a;
+  --red: #dc2626;
 }
+
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    line-height: 1.6;
-    -webkit-font-smoothing: antialiased;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--tx);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* -- Layout -- */
 .container { max-width: 1100px; margin: 0 auto; padding: 0 2rem; }
-section { padding: 5rem 0; }
+section { padding: 7rem 0; }
 
-/* -- Hero -- */
+/* ── Nav ── */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  padding: 1.25rem 0;
+  background: rgba(250,250,249,.85);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--bdr);
+}
+.nav-inner { display: flex; align-items: center; justify-content: space-between; }
+.nav-brand {
+  font-weight: 800; font-size: 1.05rem; color: var(--tx);
+  text-decoration: none; letter-spacing: -.03em;
+}
+.nav-links { display: flex; align-items: center; gap: 2.5rem; list-style: none; }
+.nav-links a {
+  font-size: .875rem; font-weight: 500; color: var(--tx2);
+  text-decoration: none; transition: color .15s;
+}
+.nav-links a:hover { color: var(--tx); }
+.nav-cta {
+  background: var(--dark); color: #fff !important;
+  padding: .6rem 1.5rem; border-radius: 999px; font-weight: 600;
+  font-size: .85rem; transition: background .15s;
+}
+.nav-cta:hover { background: var(--dark2); }
+
+/* ── Hero ── */
 .hero {
-    min-height: 90vh;
-    display: flex;
-    align-items: center;
-    position: relative;
-    overflow: hidden;
+  min-height: 100vh; display: flex; align-items: center;
+  padding-top: 6rem; text-align: center;
 }
-.hero::before {
-    content: '';
-    position: absolute;
-    top: -40%;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 800px;
-    height: 800px;
-    background: radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%);
-    pointer-events: none;
+.hero-pill {
+  display: inline-flex; align-items: center; gap: .5rem;
+  font-size: .8rem; font-weight: 600; color: var(--green);
+  background: var(--green-bg); border: 1px solid var(--green-bdr);
+  border-radius: 999px; padding: .45rem 1.25rem;
+  margin-bottom: 2.5rem;
 }
-.hero-content { position: relative; z-index: 1; width: 100%; }
-.hero-badge {
-    display: inline-block;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--accent);
-    border: 1px solid rgba(59,130,246,0.3);
-    border-radius: 999px;
-    padding: 0.375rem 1rem;
-    margin-bottom: 1.5rem;
+.hero-pill::before {
+  content: ''; width: 6px; height: 6px;
+  background: var(--green); border-radius: 50%;
 }
 .hero h1 {
-    font-size: clamp(2.25rem, 5vw, 3.5rem);
-    font-weight: 800;
-    line-height: 1.15;
-    margin-bottom: 1.25rem;
-    letter-spacing: -0.02em;
+  font-size: clamp(3rem, 7vw, 5rem);
+  font-weight: 900; line-height: 1.05;
+  letter-spacing: -.045em;
+  margin-bottom: 1.75rem;
+  color: var(--dark);
 }
-.hero h1 .accent { color: var(--accent); }
-.hero .subtitle {
-    font-size: 1.15rem;
-    color: var(--text-secondary);
-    max-width: 600px;
-    margin-bottom: 2.5rem;
-    line-height: 1.7;
+.hero-sub {
+  font-size: 1.25rem; color: var(--tx2);
+  max-width: 600px; margin: 0 auto 3.5rem;
+  line-height: 1.7; font-weight: 400;
 }
 
-/* -- Metric Cards -- */
+/* ── Metric strip ── */
 .metrics {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 1rem;
-    margin-bottom: 2.5rem;
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  max-width: 720px; margin: 0 auto 3.5rem;
+  border: 1px solid var(--bdr); border-radius: 16px;
+  overflow: hidden; background: var(--bg2);
 }
-.metric-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 1.5rem;
-    text-align: center;
-    transition: transform 0.2s ease, border-color 0.2s ease;
+.metric {
+  padding: 2rem 1rem; text-align: center;
+  border-right: 1px solid var(--bdr);
 }
-.metric-card:hover {
-    transform: translateY(-2px);
-    border-color: var(--accent);
+.metric:last-child { border-right: none; }
+.metric-val {
+  font-size: 2rem; font-weight: 800;
+  letter-spacing: -.03em; line-height: 1; margin-bottom: .35rem;
 }
-.metric-value {
-    font-size: 2rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-}
-.metric-value.green { color: var(--positive); }
-.metric-value.blue { color: var(--accent); }
+.metric-val.green { color: var(--green); }
+.metric-val.blue { color: var(--blue); }
 .metric-label {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-muted);
-    margin-top: 0.375rem;
+  font-size: .7rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .1em;
+  color: var(--tx3);
 }
-
-/* -- CTA -- */
-.cta-row {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    flex-wrap: wrap;
-}
+.hero-ctas { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; }
 .btn-primary {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: var(--accent);
-    color: #fff;
-    font-weight: 600;
-    font-size: 0.95rem;
-    padding: 0.75rem 1.75rem;
-    border-radius: 8px;
-    text-decoration: none;
-    transition: background 0.2s ease;
+  display: inline-flex; align-items: center; gap: .5rem;
+  background: var(--dark); color: #fff; font-weight: 600;
+  font-size: .95rem; padding: .9rem 2.25rem; border-radius: 999px;
+  text-decoration: none; transition: all .15s; border: none;
 }
-.btn-primary:hover { background: #2563eb; }
+.btn-primary:hover { background: var(--dark2); transform: translateY(-1px); }
 .btn-secondary {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    border: 1px solid var(--border);
-    color: var(--text-secondary);
-    font-weight: 500;
-    font-size: 0.95rem;
-    padding: 0.75rem 1.75rem;
-    border-radius: 8px;
-    text-decoration: none;
-    transition: border-color 0.2s ease, color 0.2s ease;
+  display: inline-flex; align-items: center; gap: .5rem;
+  background: transparent; color: var(--tx); font-weight: 600;
+  font-size: .95rem; padding: .9rem 2.25rem; border-radius: 999px;
+  text-decoration: none; border: 1px solid var(--bdr2); transition: all .15s;
 }
-.btn-secondary:hover { border-color: var(--text-secondary); color: var(--text-primary); }
+.btn-secondary:hover { border-color: var(--tx3); background: var(--bg2); }
 
-/* -- Section Headers -- */
+/* ── Section headers ── */
 .section-label {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--accent);
-    margin-bottom: 0.75rem;
+  font-size: .75rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .12em;
+  color: var(--blue); margin-bottom: .75rem;
 }
-.section-title {
-    font-size: 1.75rem;
-    font-weight: 700;
-    margin-bottom: 0.75rem;
-    letter-spacing: -0.01em;
+h2 {
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  font-weight: 800; letter-spacing: -.035em;
+  line-height: 1.12; margin-bottom: 1rem;
+  color: var(--dark);
 }
 .section-desc {
-    color: var(--text-secondary);
-    max-width: 600px;
-    margin-bottom: 3rem;
+  font-size: 1.1rem; color: var(--tx2);
+  max-width: 520px; line-height: 1.7;
+  margin-bottom: 3.5rem;
 }
 
-/* -- How It Works -- */
-.steps {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 2rem;
+/* ── Models banner ── */
+.models-banner {
+  background: var(--bg2); border: 1px solid var(--bdr);
+  border-radius: 16px; padding: 3rem;
+  text-align: center; margin-bottom: 4rem;
 }
+.models-banner h3 {
+  font-size: 1.1rem; font-weight: 700;
+  margin-bottom: .75rem; color: var(--dark);
+}
+.models-banner p {
+  font-size: .95rem; color: var(--tx2);
+  max-width: 560px; margin: 0 auto 2rem; line-height: 1.65;
+}
+.model-tags { display: flex; justify-content: center; gap: .75rem; flex-wrap: wrap; }
+.model-tag {
+  background: var(--bg3); border: 1px solid var(--bdr);
+  padding: .5rem 1.25rem; border-radius: 999px;
+  font-size: .85rem; font-weight: 600; color: var(--tx);
+}
+
+/* ── Two-col layout ── */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 5rem; align-items: start; }
+
+/* ── Feature list ── */
+.features { list-style: none; }
+.features li {
+  padding: 1.25rem 0; border-bottom: 1px solid var(--bdr);
+  font-size: .95rem; color: var(--tx2); line-height: 1.65;
+}
+.features li:last-child { border-bottom: none; }
+.features li strong { color: var(--tx); font-weight: 600; }
+
+/* ── Pipeline cards ── */
+.pipeline { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
 .step {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 2rem;
-    position: relative;
+  background: var(--bg2); border: 1px solid var(--bdr);
+  border-radius: 16px; padding: 2.25rem 2rem;
 }
-.step-number {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.25rem;
-    height: 2.25rem;
-    background: rgba(59,130,246,0.12);
-    color: var(--accent);
-    font-weight: 700;
-    font-size: 0.9rem;
-    border-radius: 8px;
-    margin-bottom: 1.25rem;
+.step-num {
+  font-size: .75rem; font-weight: 700; color: var(--blue);
+  background: var(--blue-bg); border: 1px solid var(--blue-bdr);
+  width: 2rem; height: 2rem; display: flex;
+  align-items: center; justify-content: center;
+  border-radius: 8px; margin-bottom: 1.25rem;
 }
-.step h3 {
-    font-size: 1.1rem;
-    font-weight: 700;
-    margin-bottom: 0.625rem;
-}
-.step p {
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-    line-height: 1.65;
-}
+.step h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: .5rem; }
+.step p { font-size: .875rem; color: var(--tx2); line-height: 1.65; }
 
-/* -- Analysts -- */
-.domains {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 2rem;
+/* ── Analyst cards ── */
+.analyst-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
+.analyst-card {
+  background: var(--bg2); border: 1px solid var(--bdr);
+  border-radius: 16px; padding: 2rem; transition: transform .15s;
 }
-.domain-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 2rem;
+.analyst-card:hover { transform: translateY(-2px); }
+.analyst-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
+.analyst-domain { font-size: .85rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.analyst-card.quant .analyst-domain { color: var(--blue); }
+.analyst-card.value .analyst-domain { color: var(--green); }
+.analyst-card.macro .analyst-domain { color: var(--amber); }
+.analyst-badge {
+  font-size: .7rem; font-weight: 600; color: var(--tx3);
+  background: var(--bg3); padding: .25rem .75rem; border-radius: 999px;
 }
-.domain-header-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1.25rem;
-}
-.domain-name {
-    font-size: 1rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-}
-.domain-count {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    background: var(--bg-secondary);
-    padding: 0.25rem 0.625rem;
-    border-radius: 999px;
-}
-.domain-card.quant .domain-name { color: var(--accent); }
-.domain-card.value .domain-name { color: var(--positive); }
-.domain-card.macro .domain-name { color: var(--warning); }
-.analyst-list { list-style: none; }
+.analyst-list { list-style: none; margin-bottom: 1rem; }
 .analyst-list li {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    padding: 0.375rem 0;
-    border-bottom: 1px solid rgba(45,51,72,0.5);
+  font-size: .875rem; color: var(--tx2); padding: .4rem 0;
+  border-bottom: 1px solid var(--bdr); display: flex;
+  align-items: center; gap: .5rem;
 }
 .analyst-list li:last-child { border-bottom: none; }
-.domain-note {
-    margin-top: 1rem;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    font-style: italic;
+.analyst-list li::before {
+  content: ''; width: 5px; height: 5px;
+  border-radius: 50%; flex-shrink: 0;
 }
+.analyst-card.quant .analyst-list li::before { background: var(--blue); }
+.analyst-card.value .analyst-list li::before { background: var(--green); }
+.analyst-card.macro .analyst-list li::before { background: var(--amber); }
+.analyst-note { font-size: .75rem; color: var(--tx3); }
 
-/* -- Demo -- */
-.demo-section {
-    background: var(--bg-secondary);
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
+/* ── Demo section ── */
+.demo-section { background: var(--dark); color: #fff; }
+.demo-section .section-label { color: #60a5fa; }
+.demo-section h2 { color: #fff; }
+.demo-section .section-desc { color: #a8a29e; }
+.demo-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 4rem; align-items: center; }
+.demo-steps { list-style: none; margin-bottom: 2rem; }
+.demo-steps li {
+  font-size: .9rem; color: #a8a29e; padding: .6rem 0;
+  display: flex; align-items: flex-start; gap: .75rem;
 }
-.demo-inner {
-    display: flex;
-    align-items: center;
-    gap: 4rem;
+.demo-step-num {
+  font-size: .7rem; font-weight: 700; color: #60a5fa;
+  background: rgba(96,165,250,.15);
+  width: 1.5rem; height: 1.5rem; display: flex;
+  align-items: center; justify-content: center;
+  border-radius: 6px; flex-shrink: 0; margin-top: .1rem;
 }
-.demo-text { flex: 1; }
-.demo-terminal {
-    flex: 1;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
+.terminal {
+  background: #0c0c10; border: 1px solid #27272a;
+  border-radius: 12px; overflow: hidden;
+  box-shadow: 0 25px 60px rgba(0,0,0,.5);
 }
 .terminal-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.75rem 1rem;
-    background: var(--bg-card);
-    border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 6px;
+  padding: .875rem 1.25rem; background: #1a1a1e;
+  border-bottom: 1px solid #27272a;
 }
-.terminal-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--border);
+.terminal-dot { width: 10px; height: 10px; border-radius: 50%; }
+.terminal-dot.red { background: #ef4444; }
+.terminal-dot.yellow { background: #f59e0b; }
+.terminal-dot.green { background: #22c55e; }
+.terminal-title {
+  margin-left: auto; font-size: .7rem;
+  color: #71717a; font-family: monospace;
 }
-.terminal-dot:nth-child(1) { background: #ef4444; }
-.terminal-dot:nth-child(2) { background: #f59e0b; }
-.terminal-dot:nth-child(3) { background: #22c55e; }
 .terminal-body {
-    padding: 1.25rem;
-    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
-    font-size: 0.825rem;
-    line-height: 1.7;
-    color: var(--text-secondary);
-    white-space: pre;
-    overflow-x: auto;
+  padding: 1.5rem; font-family: 'Courier New', monospace;
+  font-size: .8rem; line-height: 1.8; color: #a8a29e;
+  white-space: pre; overflow-x: auto;
 }
-.terminal-body .cmd { color: var(--positive); }
-.terminal-body .out { color: var(--text-muted); }
-.terminal-body .highlight { color: var(--accent); }
+.terminal-body .prompt { color: #22c55e; }
+.terminal-body .highlight { color: #60a5fa; font-weight: 700; }
+.terminal-body .success { color: #22c55e; }
+.terminal-body .dim { opacity: .5; }
+.demo-cta {
+  display: inline-flex; align-items: center; gap: .5rem;
+  background: #fff; color: var(--dark); font-weight: 600;
+  font-size: .95rem; padding: .9rem 2.25rem; border-radius: 999px;
+  text-decoration: none; transition: all .15s;
+}
+.demo-cta:hover { background: #e7e5e4; }
 
-/* -- Comparison Table -- */
-.comparison {
-    overflow-x: auto;
-    margin-top: 3rem;
+/* ── Crypto section ── */
+.crypto-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5rem; align-items: center; }
+.crypto-tokens { display: flex; gap: 1rem; margin-bottom: 2rem; }
+.crypto-token {
+  background: var(--bg2); border: 1px solid var(--bdr);
+  border-radius: 12px; padding: 1.5rem 2rem;
+  text-align: center; flex: 1; transition: border-color .15s;
 }
-.comparison table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.85rem;
+.crypto-token:hover { border-color: var(--amber-bdr); }
+.crypto-symbol {
+  font-size: 1.5rem; font-weight: 800;
+  color: var(--amber); margin-bottom: .2rem;
+  letter-spacing: -.02em;
 }
-.comparison th {
-    text-align: left;
-    padding: 0.75rem 1rem;
-    border-bottom: 2px solid var(--border);
-    color: var(--text-muted);
-    font-weight: 600;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+.crypto-name { font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: var(--tx3); font-weight: 600; }
+.crypto-features { list-style: none; }
+.crypto-features li {
+  font-size: .9rem; color: var(--tx2); padding: .65rem 0;
+  border-bottom: 1px solid var(--bdr);
+  display: flex; align-items: center; gap: .75rem;
 }
-.comparison td {
-    padding: 0.625rem 1rem;
-    border-bottom: 1px solid var(--border);
-    color: var(--text-secondary);
-}
-.comparison tr:hover td { background: var(--bg-hover); }
-.comparison .yes { color: var(--positive); font-weight: 600; }
-.comparison .no { color: var(--negative); }
+.crypto-features li:last-child { border-bottom: none; }
+.crypto-check { color: var(--green); font-weight: 700; font-size: .85rem; }
 
-/* -- Footer -- */
-.footer {
-    padding: 3rem 0;
-    border-top: 1px solid var(--border);
-    text-align: center;
+/* ── A/B comparison ── */
+.ab-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2.5rem; }
+.ab-card {
+  background: var(--bg2); border: 1px solid var(--bdr);
+  border-radius: 16px; padding: 2rem;
 }
-.footer-links {
-    display: flex;
-    justify-content: center;
-    gap: 2rem;
-    margin-bottom: 1.5rem;
+.ab-card.treatment { border-left: 3px solid var(--green); }
+.ab-card.control { border-left: 3px solid var(--tx3); }
+.ab-label {
+  font-size: .7rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .1em;
+  margin-bottom: 1.25rem;
 }
+.ab-card.control .ab-label { color: var(--tx3); }
+.ab-card.treatment .ab-label { color: var(--green); }
+.ab-row {
+  display: flex; justify-content: space-between;
+  align-items: baseline; padding: .5rem 0;
+  border-bottom: 1px solid var(--bdr);
+}
+.ab-row:last-child { border-bottom: none; }
+.ab-name { font-size: .85rem; color: var(--tx2); }
+.ab-value { font-weight: 700; font-size: .95rem; }
+.ab-value.green { color: var(--green); }
+.ab-value.blue { color: var(--blue); }
+.ab-value.muted { color: var(--tx3); }
+.ab-deltas { display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; }
+.ab-delta {
+  background: var(--green-bg); border: 1px solid var(--green-bdr);
+  border-radius: 12px; padding: 1.25rem 2.5rem; text-align: center;
+}
+.ab-delta-val {
+  font-size: 1.5rem; font-weight: 800;
+  color: var(--green); margin-bottom: .2rem;
+  letter-spacing: -.02em;
+}
+.ab-delta-label {
+  font-size: .7rem; text-transform: uppercase;
+  letter-spacing: .1em; color: var(--tx3); font-weight: 600;
+}
+
+/* ── Comparison table ── */
+.compare-wrap { overflow-x: auto; border: 1px solid var(--bdr); border-radius: 16px; background: var(--bg2); }
+table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+th {
+  text-align: left; padding: 1rem 1.5rem;
+  background: var(--bg3); border-bottom: 1px solid var(--bdr);
+  font-size: .7rem; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--tx3); font-weight: 700;
+}
+td {
+  padding: .95rem 1.5rem; border-bottom: 1px solid var(--bdr);
+  color: var(--tx2);
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--bg3); }
+td.yes { color: var(--green); font-weight: 600; }
+td.no { color: var(--tx3); }
+
+/* ── Performance cards ── */
+.perf-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 2rem; }
+.perf-card {
+  background: var(--bg2); border: 1px solid var(--bdr);
+  border-radius: 16px; padding: 2.5rem 2rem; text-align: center;
+}
+.perf-val {
+  font-size: 2.75rem; font-weight: 800;
+  letter-spacing: -.03em; line-height: 1; margin-bottom: .5rem;
+}
+.perf-val.green { color: var(--green); }
+.perf-val.blue { color: var(--blue); }
+.perf-label {
+  font-size: .7rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .12em;
+  color: var(--tx3); margin-bottom: .35rem;
+}
+.perf-detail { font-size: .8rem; color: var(--tx3); }
+.perf-disclaimer {
+  text-align: center; font-size: .75rem; color: var(--tx3);
+  max-width: 560px; margin: 0 auto; line-height: 1.65;
+}
+
+/* ── Footer ── */
+footer {
+  padding: 4rem 0 3rem; border-top: 1px solid var(--bdr);
+}
+.footer-inner {
+  display: flex; align-items: center;
+  justify-content: space-between; flex-wrap: wrap; gap: 1.5rem;
+}
+.footer-brand { font-weight: 800; font-size: .95rem; letter-spacing: -.02em; }
+.footer-links { display: flex; align-items: center; gap: 2rem; list-style: none; }
 .footer-links a {
-    color: var(--text-secondary);
-    text-decoration: none;
-    font-size: 0.875rem;
-    transition: color 0.15s;
+  font-size: .85rem; color: var(--tx3);
+  text-decoration: none; transition: color .15s;
 }
-.footer-links a:hover { color: var(--text-primary); }
-.footer-note {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-}
-
-/* -- Responsive -- */
-@media (max-width: 768px) {
-    .container { padding: 0 1.25rem; }
-    section { padding: 3.5rem 0; }
-    .metrics { grid-template-columns: repeat(2, 1fr); }
-    .steps { grid-template-columns: 1fr; }
-    .domains { grid-template-columns: 1fr; }
-    .demo-inner { flex-direction: column; gap: 2rem; }
-    .cta-row { flex-direction: column; align-items: flex-start; }
-}
-@media (max-width: 480px) {
-    .metrics { grid-template-columns: 1fr; }
+.footer-links a:hover { color: var(--tx); }
+.footer-sub {
+  width: 100%; text-align: center; padding-top: 2rem;
+  margin-top: 1rem; border-top: 1px solid var(--bdr);
+  font-size: .75rem; color: var(--tx3); line-height: 1.7;
 }
 
-/* -- Animations -- */
-@keyframes fadeUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .metrics { grid-template-columns: repeat(2, 1fr); }
+  .pipeline, .analyst-grid { grid-template-columns: 1fr; }
+  .two-col, .demo-grid, .crypto-grid, .ab-grid { grid-template-columns: 1fr; gap: 2.5rem; }
+  .perf-grid { grid-template-columns: 1fr; }
+  .nav-links { display: none; }
 }
-.fade-up {
-    animation: fadeUp 0.6s ease forwards;
-    opacity: 0;
+@media (max-width: 640px) {
+  .container { padding: 0 1.25rem; }
+  section { padding: 4.5rem 0; }
+  .hero-ctas { flex-direction: column; }
+  .hero-ctas a { width: 100%; justify-content: center; text-align: center; }
+  .crypto-tokens { flex-direction: column; }
+  .ab-deltas { flex-direction: column; align-items: stretch; }
+  .footer-inner { flex-direction: column; text-align: center; }
+  .footer-links { justify-content: center; }
 }
-.fade-up:nth-child(1) { animation-delay: 0s; }
-.fade-up:nth-child(2) { animation-delay: 0.1s; }
-.fade-up:nth-child(3) { animation-delay: 0.2s; }
-.fade-up:nth-child(4) { animation-delay: 0.3s; }
 </style>
 </head>
 <body>
 
-<!-- HERO -->
+<!-- Nav -->
+<nav>
+  <div class="container nav-inner">
+    <a href="#" class="nav-brand">Covenant Hedge Fund</a>
+    <ul class="nav-links">
+      <li><a href="#how-it-works">How it works</a></li>
+      <li><a href="#analysts">Analysts</a></li>
+      <li><a href="#performance">Performance</a></li>
+      <li><a href="#demo">Demo</a></li>
+      <li><a href="https://github.com/asalsali/covenant-hedge-fund" class="nav-cta">GitHub</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- Hero -->
 <section class="hero">
-<div class="container">
-<div class="hero-content">
-    <div class="hero-badge fade-up">Open Source Portfolio Engine</div>
-    <h1 class="fade-up">AI-governed investing.<br><span class="accent">Deterministic risk.</span></h1>
-    <p class="subtitle fade-up">18 analyst personas. 3 investment domains. 25 risk rules enforced in code, not by an LLM. Every signal is reproducible, every decision is auditable.</p>
-
-    <div class="metrics fade-up">
-        <div class="metric-card">
-            <div class="metric-value green">+73%</div>
-            <div class="metric-label">Total Return</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value blue">2.20</div>
-            <div class="metric-label">Sharpe Ratio</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value green">+37%</div>
-            <div class="metric-label">Alpha vs SPY</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value blue">18</div>
-            <div class="metric-label">Analyst Personas</div>
-        </div>
+  <div class="container" style="text-align:center">
+    <div class="hero-pill">Powered by free open-source models</div>
+    <h1>Trade smarter with<br>AI governance</h1>
+    <p class="hero-sub">18 analyst personas. Deterministic risk engine. Every decision is auditable, every trade is reproducible. Powered by Llama, Qwen, DeepSeek, and Mistral via Ollama.</p>
+    <div class="metrics">
+      <div class="metric"><div class="metric-val green">+73%</div><div class="metric-label">Total Return</div></div>
+      <div class="metric"><div class="metric-val blue">2.20</div><div class="metric-label">Sharpe Ratio</div></div>
+      <div class="metric"><div class="metric-val green">+37%</div><div class="metric-label">Alpha vs SPY</div></div>
+      <div class="metric"><div class="metric-val blue">18</div><div class="metric-label">Analysts</div></div>
     </div>
-
-    <div class="cta-row fade-up">
-        <a href="https://github.com/asalsali/covenant-hedge-fund" class="btn-primary">View on GitHub</a>
-        <a href="#demo" class="btn-secondary">Try the demo</a>
+    <div class="hero-ctas">
+      <a href="https://github.com/asalsali/covenant-hedge-fund" class="btn-primary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        View on GitHub
+      </a>
+      <a href="#demo" class="btn-secondary">Run the demo</a>
     </div>
-</div>
-</div>
+  </div>
 </section>
 
-<!-- HOW IT WORKS -->
-<section id="methodology">
-<div class="container">
-    <div class="section-label">Methodology</div>
-    <h2 class="section-title">How it works</h2>
-    <p class="section-desc">A governed pipeline from market data to trade execution. Each stage is deterministic and auditable.</p>
-
-    <div class="steps">
-        <div class="step fade-up">
-            <div class="step-number">1</div>
-            <h3>Data Collection</h3>
-            <p>Market prices, financial metrics, and insider activity are fetched from Yahoo Finance for the target universe. No paid data feeds required.</p>
-        </div>
-        <div class="step fade-up">
-            <div class="step-number">2</div>
-            <h3>Multi-Agent Analysis</h3>
-            <p>18 analyst personas -- quant, value, and macro -- each produce a scored signal with confidence and reasoning. Quant analysts run without any LLM. Value and macro analysts use optional LLM augmentation and degrade gracefully without one.</p>
-        </div>
-        <div class="step fade-up">
-            <div class="step-number">3</div>
-            <h3>Risk-Managed Portfolio</h3>
-            <p>Signals are combined via confidence-weighted scoring. The risk engine enforces volatility limits, correlation constraints, and position caps in code. Same inputs always produce the same trades.</p>
-        </div>
+<!-- Open-source models banner -->
+<div style="padding: 0 0 2rem;">
+  <div class="container">
+    <div class="models-banner">
+      <h3>Zero API costs. Run everything locally.</h3>
+      <p>No paid APIs. No vendor lock-in. Choose any open-source model that fits your hardware. The system degrades gracefully to quant-only mode when no LLM is available.</p>
+      <div class="model-tags">
+        <span class="model-tag">Llama 3</span>
+        <span class="model-tag">Qwen 2.5</span>
+        <span class="model-tag">DeepSeek</span>
+        <span class="model-tag">Mistral</span>
+        <span class="model-tag">Gemma</span>
+        <span class="model-tag">Phi-3</span>
+      </div>
     </div>
+  </div>
 </div>
+
+<!-- How it works -->
+<section id="how-it-works">
+  <div class="container">
+    <div class="section-label">How it works</div>
+    <h2>From market data to<br>portfolio decisions</h2>
+    <p class="section-desc">Three stages. Fully deterministic. Same inputs always produce the same trades.</p>
+    <div class="pipeline">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3>Data Collection</h3>
+        <p>Market prices, financial metrics, and insider activity from Yahoo Finance and CoinGecko. Free data sources. Supports equities and crypto.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h3>Multi-Agent Analysis</h3>
+        <p>18 analyst personas each produce a scored signal with direction, confidence, and reasoning. Quant analysts are fully deterministic. Value and macro use open-source models for qualitative reasoning.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3>Risk-Managed Portfolio</h3>
+        <p>Signals combined via confidence-weighted quorum voting. The risk engine enforces volatility limits, correlation constraints, and position caps as code.</p>
+      </div>
+    </div>
+  </div>
 </section>
 
-<!-- ANALYSTS -->
+<!-- Architecture -->
+<section style="padding-top: 0;">
+  <div class="container">
+    <div class="two-col">
+      <div>
+        <div class="section-label">Architecture</div>
+        <h2>Governed pipeline,<br>not a chatbot wrapper</h2>
+        <p class="section-desc">Every stage is deterministic and auditable. The LLM is one input into a governed system &mdash; not the system itself.</p>
+      </div>
+      <ul class="features">
+        <li><strong>Deterministic by default.</strong> The 5 quant analysts run without any LLM. Same inputs always produce the same signals, votes, and trades.</li>
+        <li><strong>Open-source models, not paid APIs.</strong> Value and macro analysts use Llama 3, Qwen 2.5, DeepSeek, or Mistral via Ollama. Free, local, private.</li>
+        <li><strong>Risk as law.</strong> 25 risk rules enforced in code: position sizing caps, volatility limits, correlation constraints. No model can override them.</li>
+        <li><strong>Full audit trail.</strong> Every signal, every vote, every allocation decision is logged. Trace any trade back to the analysts that recommended it.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- Analysts -->
 <section id="analysts">
-<div class="container">
+  <div class="container">
     <div class="section-label">Investment Committee</div>
-    <h2 class="section-title">18 analyst personas across 3 domains</h2>
-    <p class="section-desc">Each analyst produces a uniform signal: direction, confidence, and reasoning. Consensus drives allocation.</p>
-
-    <div class="domains">
-        <div class="domain-card quant fade-up">
-            <div class="domain-header-row">
-                <div class="domain-name">Quant</div>
-                <div class="domain-count">5 analysts</div>
-            </div>
-            <ul class="analyst-list">
-                <li>Technicals</li>
-                <li>Fundamentals</li>
-                <li>Valuation</li>
-                <li>Growth</li>
-                <li>Sentiment</li>
-            </ul>
-            <div class="domain-note">No LLM required. Fully deterministic.</div>
+    <h2>18 analysts across 3 domains</h2>
+    <p class="section-desc">Each analyst produces a uniform signal: direction, confidence, reasoning. Consensus drives allocation.</p>
+    <div class="analyst-grid">
+      <div class="analyst-card quant">
+        <div class="analyst-header">
+          <div class="analyst-domain">Quant</div>
+          <div class="analyst-badge">5 analysts</div>
         </div>
-        <div class="domain-card value fade-up">
-            <div class="domain-header-row">
-                <div class="domain-name">Value</div>
-                <div class="domain-count">6 analysts</div>
-            </div>
-            <ul class="analyst-list">
-                <li>Buffett</li>
-                <li>Graham</li>
-                <li>Munger</li>
-                <li>Pabrai</li>
-                <li>Fisher</li>
-                <li>Damodaran</li>
-            </ul>
-            <div class="domain-note">LLM-augmented. Degrades to neutral without one.</div>
+        <ul class="analyst-list">
+          <li>Technicals</li><li>Fundamentals</li><li>Valuation</li><li>Growth</li><li>Sentiment</li>
+        </ul>
+        <div class="analyst-note">No LLM required. Fully deterministic.</div>
+      </div>
+      <div class="analyst-card value">
+        <div class="analyst-header">
+          <div class="analyst-domain">Value</div>
+          <div class="analyst-badge">6 analysts</div>
         </div>
-        <div class="domain-card macro fade-up">
-            <div class="domain-header-row">
-                <div class="domain-name">Macro</div>
-                <div class="domain-count">7 analysts</div>
-            </div>
-            <ul class="analyst-list">
-                <li>Druckenmiller</li>
-                <li>Burry</li>
-                <li>Cathie Wood</li>
-                <li>Lynch</li>
-                <li>Ackman</li>
-                <li>Taleb</li>
-                <li>News Sentiment</li>
-            </ul>
-            <div class="domain-note">LLM-augmented. Contrarian + macro overlay.</div>
+        <ul class="analyst-list">
+          <li>Buffett</li><li>Graham</li><li>Munger</li><li>Pabrai</li><li>Fisher</li><li>Damodaran</li>
+        </ul>
+        <div class="analyst-note">Open-source LLM. Degrades to neutral without one.</div>
+      </div>
+      <div class="analyst-card macro">
+        <div class="analyst-header">
+          <div class="analyst-domain">Macro</div>
+          <div class="analyst-badge">7 analysts</div>
         </div>
+        <ul class="analyst-list">
+          <li>Druckenmiller</li><li>Burry</li><li>Cathie Wood</li><li>Lynch</li><li>Ackman</li><li>Taleb</li><li>News Sentiment</li>
+        </ul>
+        <div class="analyst-note">Open-source LLM. Contrarian + macro overlay.</div>
+      </div>
     </div>
-</div>
+  </div>
 </section>
 
-<!-- DEMO -->
+<!-- Demo -->
 <section id="demo" class="demo-section">
-<div class="container">
-    <div class="demo-inner">
-        <div class="demo-text">
-            <div class="section-label">Zero Configuration</div>
-            <h2 class="section-title">Run the demo in one command</h2>
-            <p class="section-desc" style="margin-bottom:1.5rem;">No API keys. No configuration files. Clone the repo, install dependencies, and run. You get a full 6-month backtest on AAPL, MSFT, and NVDA with an interactive HTML report.</p>
-            <a href="https://github.com/asalsali/covenant-hedge-fund" class="btn-primary">Get started</a>
+  <div class="container">
+    <div class="demo-grid">
+      <div>
+        <div class="section-label">Zero Configuration</div>
+        <h2>Run the demo<br>in one command</h2>
+        <p class="section-desc">No API keys. No config files. Clone, install, run. Full 6-month backtest with interactive HTML report.</p>
+        <ul class="demo-steps">
+          <li><span class="demo-step-num">1</span> Clone the repository</li>
+          <li><span class="demo-step-num">2</span> Install dependencies (7 packages)</li>
+          <li><span class="demo-step-num">3</span> Run demo.py &mdash; results in 2.3 seconds</li>
+          <li><span class="demo-step-num">4</span> Open the HTML report in your browser</li>
+        </ul>
+        <a href="https://github.com/asalsali/covenant-hedge-fund" class="demo-cta">Get started</a>
+      </div>
+      <div class="terminal">
+        <div class="terminal-bar">
+          <span class="terminal-dot red"></span>
+          <span class="terminal-dot yellow"></span>
+          <span class="terminal-dot green"></span>
+          <span class="terminal-title">terminal</span>
         </div>
-        <div class="demo-terminal">
-            <div class="terminal-bar">
-                <span class="terminal-dot"></span>
-                <span class="terminal-dot"></span>
-                <span class="terminal-dot"></span>
-            </div>
-            <div class="terminal-body"><span class="cmd">$ git clone https://github.com/asalsali/covenant-hedge-fund.git</span>
-<span class="cmd">$ cd covenant-hedge-fund</span>
-<span class="cmd">$ pip install -r requirements.txt</span>
-<span class="cmd">$ python demo.py</span>
+        <div class="terminal-body"><span class="prompt">$</span> git clone https://github.com/asalsali/covenant-hedge-fund.git
+<span class="prompt">$</span> cd covenant-hedge-fund
+<span class="prompt">$</span> pip install -r requirements.txt
+<span class="prompt">$</span> python demo.py
 
-<span class="out">Covenant Hedge Fund -- Quick Demo
-==================================================
+<span class="dim">Covenant Hedge Fund — Quick Demo</span>
+<span class="dim">==================================================</span>
 
 Running 6-month backtest on AAPL, MSFT, NVDA
 (quant-only, no API keys needed)
 
-  Completed in <span class="highlight">2.3s</span>
+<span class="success">  Completed in </span><span class="highlight">2.3s</span>
 
   Report saved to reports/backtest-report.html
-  Open it in your browser to see the full analysis.</span></div>
-        </div>
+  Open it in your browser to see the full analysis.</div>
+      </div>
     </div>
-</div>
+  </div>
 </section>
 
-<!-- COMPARISON -->
+<!-- Crypto -->
+<section id="crypto">
+  <div class="container">
+    <div class="crypto-grid">
+      <div>
+        <div class="section-label">Crypto Support</div>
+        <h2>Equities and crypto<br>in one pipeline</h2>
+        <p class="section-desc">The same governance pipeline that analyzes equities now supports cryptocurrency. Same risk engine, same audit trail.</p>
+        <ul class="crypto-features">
+          <li><span class="crypto-check">+</span> CoinGecko data feed for on-chain metrics</li>
+          <li><span class="crypto-check">+</span> Crypto-specific volatility adjustments</li>
+          <li><span class="crypto-check">+</span> Same quorum voting and risk rules</li>
+          <li><span class="crypto-check">+</span> Mixed portfolios: equities + crypto together</li>
+          <li><span class="crypto-check">+</span> 24/7 market awareness in signal generation</li>
+        </ul>
+      </div>
+      <div>
+        <div class="crypto-tokens">
+          <div class="crypto-token"><div class="crypto-symbol">BTC</div><div class="crypto-name">Bitcoin</div></div>
+          <div class="crypto-token"><div class="crypto-symbol">ETH</div><div class="crypto-name">Ethereum</div></div>
+          <div class="crypto-token"><div class="crypto-symbol">SOL</div><div class="crypto-name">Solana</div></div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:16px;padding:1.75rem;font-size:.875rem;color:var(--tx2);line-height:1.7">
+          <strong style="color:var(--tx)">Why crypto matters here:</strong> Most AI trading systems are equity-only. Covenant's governed pipeline extends naturally to crypto because the risk engine is asset-class agnostic — the same position limits and correlation rules apply regardless of what's traded.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- A/B Validation -->
+<section id="ab-test">
+  <div class="container">
+    <div class="section-label">A/B Validated</div>
+    <h2>Open-source models<br>improve returns</h2>
+    <p class="section-desc">Backtested A/B comparison: adding LLM-augmented analysts to the quant baseline produces measurably better performance.</p>
+    <div class="ab-grid">
+      <div class="ab-card control">
+        <div class="ab-label">Run A — Quant Only (5 analysts)</div>
+        <div class="ab-row"><span class="ab-name">Total Return</span><span class="ab-value muted">Baseline</span></div>
+        <div class="ab-row"><span class="ab-name">Sharpe Ratio</span><span class="ab-value muted">Baseline</span></div>
+        <div class="ab-row"><span class="ab-name">LLM Calls</span><span class="ab-value muted">0</span></div>
+        <div class="ab-row"><span class="ab-name">API Cost</span><span class="ab-value muted">$0</span></div>
+      </div>
+      <div class="ab-card treatment">
+        <div class="ab-label">Run B — Full Committee (18 analysts + open-source models)</div>
+        <div class="ab-row"><span class="ab-name">Total Return</span><span class="ab-value green">+1.5pp vs baseline</span></div>
+        <div class="ab-row"><span class="ab-name">Sharpe Ratio</span><span class="ab-value green">+14% vs baseline</span></div>
+        <div class="ab-row"><span class="ab-name">LLM Calls</span><span class="ab-value blue">Open-source (Ollama)</span></div>
+        <div class="ab-row"><span class="ab-name">API Cost</span><span class="ab-value green">$0</span></div>
+      </div>
+    </div>
+    <div class="ab-deltas">
+      <div class="ab-delta"><div class="ab-delta-val">+1.5pp</div><div class="ab-delta-label">Return improvement</div></div>
+      <div class="ab-delta"><div class="ab-delta-val">+14%</div><div class="ab-delta-label">Sharpe improvement</div></div>
+      <div class="ab-delta"><div class="ab-delta-val">$0</div><div class="ab-delta-label">Additional cost</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- Comparison table -->
 <section id="compare">
-<div class="container">
+  <div class="container">
     <div class="section-label">Differentiation</div>
-    <h2 class="section-title">Governance over guesswork</h2>
+    <h2>Governance over guesswork</h2>
     <p class="section-desc">Most AI hedge fund projects treat LLMs as the decision-maker. This one treats them as one input into a governed pipeline.</p>
-
-    <div class="comparison">
-        <table>
-            <thead>
-                <tr>
-                    <th></th>
-                    <th>Covenant Hedge Fund</th>
-                    <th>Typical AI Hedge Fund</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>LLM required to trade</td>
-                    <td class="yes">No (quant-only mode)</td>
-                    <td class="no">Yes</td>
-                </tr>
-                <tr>
-                    <td>Decision determinism</td>
-                    <td class="yes">Same inputs = same outputs</td>
-                    <td class="no">LLM variance on every run</td>
-                </tr>
-                <tr>
-                    <td>Risk enforcement</td>
-                    <td class="yes">25 code-enforced rules</td>
-                    <td class="no">LLM-suggested limits</td>
-                </tr>
-                <tr>
-                    <td>Cost to run</td>
-                    <td class="yes">$0 (quant-only or Ollama)</td>
-                    <td class="no">Paid API keys required</td>
-                </tr>
-                <tr>
-                    <td>Dependencies</td>
-                    <td class="yes">~7 packages</td>
-                    <td class="no">LangChain + LangGraph + SDKs</td>
-                </tr>
-                <tr>
-                    <td>Decision traceability</td>
-                    <td class="yes">Full signal-to-trade audit trail</td>
-                    <td class="no">Opaque LLM reasoning</td>
-                </tr>
-            </tbody>
-        </table>
+    <div class="compare-wrap">
+      <table>
+        <thead><tr><th></th><th>Covenant Hedge Fund</th><th>Typical AI Hedge Fund</th></tr></thead>
+        <tbody>
+          <tr><td>LLM required to trade</td><td class="yes">No (quant-only mode)</td><td class="no">Yes — halts without API</td></tr>
+          <tr><td>Decision determinism</td><td class="yes">Same inputs = same outputs</td><td class="no">LLM variance every run</td></tr>
+          <tr><td>Risk enforcement</td><td class="yes">25 code-enforced rules</td><td class="no">LLM-suggested limits</td></tr>
+          <tr><td>Cost to run</td><td class="yes">$0 (open-source models, local)</td><td class="no">$50–500/mo API fees</td></tr>
+          <tr><td>Crypto support</td><td class="yes">BTC, ETH, SOL + equities</td><td class="no">Usually equities only</td></tr>
+          <tr><td>Traceability</td><td class="yes">Full signal-to-trade audit</td><td class="no">Opaque LLM reasoning</td></tr>
+          <tr><td>Dependencies</td><td class="yes">7 pip packages</td><td class="no">LangChain + LangGraph + SDKs</td></tr>
+        </tbody>
+      </table>
     </div>
-</div>
+  </div>
 </section>
 
-<!-- PERFORMANCE -->
+<!-- Performance -->
 <section id="performance">
-<div class="container">
+  <div class="container">
     <div class="section-label">Backtest Results</div>
-    <h2 class="section-title">320 trading days. 8 tickers. Full audit trail.</h2>
-    <p class="section-desc">Backtested across AAPL, MSFT, GOOGL, AMZN, NVDA, JPM, JNJ, and XOM with SPY as benchmark.</p>
-
-    <div class="steps">
-        <div class="step fade-up">
-            <div class="metric-value green" style="font-size:1.75rem;">+73.29%</div>
-            <div class="metric-label" style="margin-top:0.5rem;">Total Return</div>
-            <p style="margin-top:0.75rem; font-size:0.85rem; color:var(--text-muted);">Annualized: +54.39%</p>
-        </div>
-        <div class="step fade-up">
-            <div class="metric-value blue" style="font-size:1.75rem;">2.20 / 4.01</div>
-            <div class="metric-label" style="margin-top:0.5rem;">Sharpe / Sortino</div>
-            <p style="margin-top:0.75rem; font-size:0.85rem; color:var(--text-muted);">Risk-adjusted outperformance</p>
-        </div>
-        <div class="step fade-up">
-            <div class="metric-value green" style="font-size:1.75rem;">+36.82%</div>
-            <div class="metric-label" style="margin-top:0.5rem;">Alpha vs SPY</div>
-            <p style="margin-top:0.75rem; font-size:0.85rem; color:var(--text-muted);">SPY returned +36.47% same period</p>
-        </div>
+    <h2>320 trading days. 8 tickers.</h2>
+    <p class="section-desc">Backtested across AAPL, MSFT, GOOGL, AMZN, NVDA, JPM, JNJ, XOM with SPY as benchmark.</p>
+    <div class="perf-grid">
+      <div class="perf-card"><div class="perf-val green">+73.29%</div><div class="perf-label">Total Return</div><div class="perf-detail">Annualized: +54.39%</div></div>
+      <div class="perf-card"><div class="perf-val blue">2.20 / 4.01</div><div class="perf-label">Sharpe / Sortino</div><div class="perf-detail">Risk-adjusted outperformance</div></div>
+      <div class="perf-card"><div class="perf-val green">+36.82%</div><div class="perf-label">Alpha vs SPY</div><div class="perf-detail">SPY returned +36.47% same period</div></div>
     </div>
-
-    <p style="margin-top:2rem; font-size:0.75rem; color:var(--text-muted); text-align:center;">Max drawdown: -15.06%. Past performance does not guarantee future results. This is a research tool, not investment advice.</p>
-</div>
+    <p class="perf-disclaimer">Max drawdown: -15.06%. Past performance does not guarantee future results. This is a research tool, not investment advice.</p>
+  </div>
 </section>
 
-<!-- FOOTER -->
-<footer class="footer">
-<div class="container">
-    <div class="footer-links">
-        <a href="https://github.com/asalsali/covenant-hedge-fund">GitHub</a>
-        <a href="https://covenant.foundation">Covenant Framework</a>
-        <a href="https://github.com/asalsali/covenant-hedge-fund/blob/main/LICENSE">MIT License</a>
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-brand">Covenant Hedge Fund</div>
+      <ul class="footer-links">
+        <li><a href="https://github.com/asalsali/covenant-hedge-fund">GitHub</a></li>
+        <li><a href="https://covenant.foundation">Covenant Framework</a></li>
+        <li><a href="https://github.com/asalsali/covenant-hedge-fund/blob/main/LICENSE">MIT License</a></li>
+      </ul>
     </div>
-    <p class="footer-note">Built on the Covenant Framework. Governance is not overhead -- it is the mechanism that makes autonomous decisions trustworthy.</p>
-</div>
+    <div class="footer-sub">Built on the Covenant Framework. Governance is not overhead — it is the mechanism that makes autonomous decisions trustworthy.</div>
+  </div>
 </footer>
 
 </body>

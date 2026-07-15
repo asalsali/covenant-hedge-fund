@@ -6,8 +6,8 @@
 #   AAPL (Technology), JPM (Financials), XOM (Energy)
 #
 # No LLM API keys required -- runs in quant-only mode by default.
-# Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or start Ollama
-# to enable value and macro analysts.
+# Start Ollama to enable value and macro analysts.
+# No paid API keys needed -- Ollama is free and local.
 
 set -e
 

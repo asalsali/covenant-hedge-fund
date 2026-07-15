@@ -36,6 +36,22 @@ load_dotenv()
 
 BASE_URL = "https://api.financialdatasets.ai"
 
+
+class DataFetchError(Exception):
+    """Raised when an API/network failure prevents data retrieval.
+
+    Distinct from "no data exists" (which returns None/empty).
+    DataFetchError means we could not reach the data source or it
+    returned a server error -- the data may exist but we failed to
+    get it.
+    """
+
+    def __init__(self, ticker: str, source: str, reason: str) -> None:
+        self.ticker = ticker
+        self.source = source
+        self.reason = reason
+        super().__init__(f"DataFetchError [{source}] {ticker}: {reason}")
+
 # Session-level cache: keyed by (function_name, ticker, params_hash).
 # Avoids redundant API calls within a single run.
 _cache: dict[tuple[str, str, str], Any] = {}
@@ -83,34 +99,67 @@ def _headers() -> dict[str, str]:
 
 
 def _request_get(url: str, params: dict[str, Any]) -> dict[str, Any] | None:
-    """Execute a GET request with CF-COMP-033 retry logic."""
+    """Execute a GET request with CF-COMP-033 retry logic.
+
+    Raises DataFetchError on network/server failures after retries.
+    Returns None only for 404 (resource genuinely does not exist).
+    """
+    ticker = params.get("ticker", "unknown")
     for attempt in range(2):
         try:
             response = httpx.get(url, headers=_headers(), params=params, timeout=30)
+            if response.status_code == 404:
+                return None  # Genuinely no data -- not an error
             response.raise_for_status()
             return response.json()
-        except (httpx.HTTPError, httpx.TimeoutException, Exception):
+        except httpx.TimeoutException:
             if attempt == 0:
                 time.sleep(5)
             else:
-                return None
+                raise DataFetchError(ticker, "financialdatasets", f"Timeout after 2 attempts: {url}")
+        except httpx.HTTPStatusError as e:
+            if attempt == 0:
+                time.sleep(5)
+            else:
+                raise DataFetchError(ticker, "financialdatasets", f"HTTP {e.response.status_code}: {url}")
+        except Exception as e:
+            if attempt == 0:
+                time.sleep(5)
+            else:
+                raise DataFetchError(ticker, "financialdatasets", f"{type(e).__name__}: {e}")
     return None
 
 
 def _request_post(url: str, payload: dict[str, Any]) -> dict[str, Any] | None:
-    """Execute a POST request with CF-COMP-033 retry logic."""
+    """Execute a POST request with CF-COMP-033 retry logic.
+
+    Raises DataFetchError on network/server failures after retries.
+    """
+    ticker = payload.get("tickers", ["unknown"])[0] if "tickers" in payload else "unknown"
     for attempt in range(2):
         try:
             response = httpx.post(
                 url, headers=_headers(), json=payload, timeout=30
             )
+            if response.status_code == 404:
+                return None
             response.raise_for_status()
             return response.json()
-        except (httpx.HTTPError, httpx.TimeoutException, Exception):
+        except httpx.TimeoutException:
             if attempt == 0:
                 time.sleep(5)
             else:
-                return None
+                raise DataFetchError(ticker, "financialdatasets", f"Timeout after 2 attempts: {url}")
+        except httpx.HTTPStatusError as e:
+            if attempt == 0:
+                time.sleep(5)
+            else:
+                raise DataFetchError(ticker, "financialdatasets", f"HTTP {e.response.status_code}: {url}")
+        except Exception as e:
+            if attempt == 0:
+                time.sleep(5)
+            else:
+                raise DataFetchError(ticker, "financialdatasets", f"{type(e).__name__}: {e}")
     return None
 
 
@@ -121,15 +170,23 @@ def _request_post(url: str, payload: dict[str, Any]) -> dict[str, Any] | None:
 def _yf_get_prices(
     ticker: str, start_date: date, end_date: date, interval: str = "day",
 ) -> list[dict[str, Any]]:
-    """Fetch OHLCV from Yahoo Finance."""
+    """Fetch OHLCV from Yahoo Finance.
+
+    Returns empty list if ticker has no data for the period.
+    Raises DataFetchError on network/API failures.
+    """
     interval_map = {"day": "1d", "week": "1wk", "month": "1mo"}
     yf_interval = interval_map.get(interval, "1d")
 
-    t = yf.Ticker(ticker)
-    # yfinance end_date is exclusive, add 1 day
-    df = t.history(start=start_date.isoformat(),
-                   end=(end_date + timedelta(days=1)).isoformat(),
-                   interval=yf_interval)
+    try:
+        t = yf.Ticker(ticker)
+        # yfinance end_date is exclusive, add 1 day
+        df = t.history(start=start_date.isoformat(),
+                       end=(end_date + timedelta(days=1)).isoformat(),
+                       interval=yf_interval)
+    except Exception as e:
+        raise DataFetchError(ticker, "yfinance", f"Failed to fetch prices: {e}")
+
     if df.empty:
         return []
 

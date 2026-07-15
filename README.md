@@ -42,7 +42,7 @@ All 18 analysts produce a uniform signal: `{signal, confidence, reasoning}`. The
 
 - **18 analysts across 3 domains** (quant, value, macro/contrarian)
 - **Works with 0 API keys** -- quant-only mode needs no LLM at all
-- **Optional LLM augmentation** -- Ollama (free, local) or Anthropic/OpenAI
+- **Optional LLM augmentation** -- Ollama (free, local)
 - **Deterministic risk** -- volatility-adjusted position sizing, correlation limits, max exposure caps
 - **25 compliance rules** enforced in code via `COMPLIANCE.md`
 - **Backtesting** with SPY benchmark, Sharpe/Sortino/drawdown metrics
@@ -59,11 +59,15 @@ python demo.py
 
 This runs a 6-month backtest on AAPL, MSFT, NVDA using 5 quant analysts (no API keys needed). Results appear in your terminal and as an HTML report in `reports/`.
 
-For LLM-augmented analysis, set your API key:
+For LLM-augmented analysis, start Ollama:
 
 ```bash
-export ANTHROPIC_API_KEY=your-key-here
+ollama serve &
+ollama pull qwen2.5:7b-instruct
 python -m src.main --tickers AAPL MSFT NVDA
+
+# Use a specific model (overrides auto-detection):
+python -m src.main --tickers AAPL MSFT NVDA --model phi4:14b
 ```
 
 ### More Examples
@@ -125,18 +129,32 @@ See `samples/backtest-output.txt` for the full backtest report, or `samples/sing
 ### Environment Variables
 
 ```bash
-# Optional: LLM providers (not needed for quant-only mode)
-ANTHROPIC_API_KEY=your_key_here     # Claude models
-OPENAI_API_KEY=your_key_here        # GPT models
-
-# Optional: local LLM (free alternative to API keys)
+# Optional: Ollama config (not needed for quant-only mode)
+# Ollama is auto-detected at localhost:11434 -- no API keys required
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=qwen2.5:7b-instruct
+OLLAMA_MODEL=qwen2.5:7b-instruct    # or use --model CLI flag
 ```
 
-### LLM Priority Chain
+### LLM Backend
 
-The system attempts LLM providers in order: **Ollama (free) -> Anthropic -> OpenAI -> fallback**. Ollama is auto-detected at localhost:11434. If no LLM is available, value and macro analysts return neutral signals and the system operates on quant signals alone.
+Ollama is the sole LLM backend. It is auto-detected at localhost:11434. If Ollama is not available, value and macro analysts return neutral signals and the system operates on quant signals alone (quant-only mode). No paid APIs are used.
+
+Model selection follows this priority chain:
+1. `--model` CLI flag (per-run override)
+2. `OLLAMA_MODEL` env var
+3. Auto-detect: picks the best model already pulled in Ollama
+4. Fallback: `qwen2.5:7b-instruct`
+
+### Recommended Models by VRAM
+
+| Tier | VRAM Required | Model | Pull Command |
+|---|---|---|---|
+| 1 (default) | 8 GB | `qwen2.5:7b-instruct` | `ollama pull qwen2.5:7b-instruct` |
+| 2 | 16 GB | `phi4:14b` | `ollama pull phi4:14b` |
+| 3 | 24 GB | `qwen2.5:32b-instruct` | `ollama pull qwen2.5:32b-instruct` |
+| 4 | 48 GB+ | `llama3.3:70b-instruct` | `ollama pull llama3.3:70b-instruct` |
+
+Pull any model and the system auto-selects it. Pull multiple and it picks the best one available.
 
 ### Ollama Setup (Free Local LLM)
 
@@ -144,8 +162,10 @@ The system attempts LLM providers in order: **Ollama (free) -> Anthropic -> Open
 # Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
 
-# Pull a model
-ollama pull qwen2.5:7b-instruct
+# Pull a model (pick one that fits your GPU)
+ollama pull qwen2.5:7b-instruct      # 8GB VRAM (default)
+# ollama pull phi4:14b                # 16GB VRAM
+# ollama pull qwen2.5:32b-instruct   # 24GB VRAM
 
 # No configuration needed -- auto-detected at localhost:11434
 ```

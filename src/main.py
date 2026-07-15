@@ -63,8 +63,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Enable lite LLM backtest: run 4 LLM personas (Buffett, Graham, "
             "Druckenmiller, Taleb) on 5 evenly-spaced rebalance dates. "
-            "Requires --backtest. ~60 LLM calls (~$1-2 on Anthropic)."
+            "Requires --backtest. ~60 LLM calls (free via Ollama)."
         ),
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help=(
+            "Ollama model to use (e.g., phi4:14b, qwen2.5:32b-instruct). "
+            "Overrides OLLAMA_MODEL env var and auto-detection. "
+            "Default: auto-selects best model already pulled in Ollama."
+        ),
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable the disk-based LLM response cache (forces fresh calls).",
     )
     return parser.parse_args(argv)
 
@@ -86,6 +101,16 @@ def _subtract_months(d: date, months: int) -> date:
 def main(argv: list[str] | None = None) -> None:
     """Run the Covenant Hedge Fund."""
     args = parse_args(argv)
+
+    # Apply --model override before any LLM calls
+    if args.model:
+        from src.llm import set_model
+        set_model(args.model)
+
+    # Apply --no-cache flag
+    if args.no_cache:
+        from src.llm import set_cache_enabled
+        set_cache_enabled(False)
 
     if args.backtest:
         from src.backtest import BacktestEngine
@@ -122,6 +147,12 @@ def main(argv: list[str] | None = None) -> None:
     print(f"  Tickers:    {', '.join(tickers)}")
     print(f"  Date range: {start_date} to {end_date}")
     print(f"  Cash:       ${args.initial_cash:,.2f}")
+
+    from src.llm import get_active_model, _check_ollama
+    if _check_ollama():
+        print(f"  LLM model:  {get_active_model()}")
+    else:
+        print("  LLM model:  (none -- quant-only mode)")
     print()
 
     # CF-COMP-030: clear data cache at start of each run
@@ -137,6 +168,7 @@ def main(argv: list[str] | None = None) -> None:
     # -------------------------------------------------------------------------
     # 2. Fetch market data
     # -------------------------------------------------------------------------
+    from src.data.api import DataFetchError
     from src.data.crypto import cg_get_crypto_metrics, is_crypto, resolve_coin_id
 
     print("[1/6] Fetching market data...")
@@ -192,6 +224,9 @@ def main(argv: list[str] | None = None) -> None:
                       f"{len(financial_metrics)} metric periods, "
                       f"{len(insider_trades)} insider trades")
 
+        except DataFetchError as e:
+            print(f"  ERROR [DataFetchError]: {e}")
+            failed_tickers.append(ticker)
         except Exception as e:
             print(f"  WARNING: Failed to fetch data for {ticker}: {e}")
             failed_tickers.append(ticker)
@@ -255,6 +290,7 @@ def main(argv: list[str] | None = None) -> None:
     from src.risk import (
         compute_volatility,
         compute_correlation,
+        compute_correlation_cap,
         compute_position_limit,
         compute_allowed_actions,
     )
@@ -275,6 +311,7 @@ def main(argv: list[str] | None = None) -> None:
 
     vol_metrics = compute_volatility(prices_dict)
     corr_metrics = compute_correlation(prices_dict)
+    corr_caps = compute_correlation_cap(prices_dict)
 
     # Initialize portfolio
     portfolio = Portfolio(initial_cash=args.initial_cash)
@@ -290,6 +327,11 @@ def main(argv: list[str] | None = None) -> None:
         limit = compute_position_limit(
             ticker, portfolio_value, vol_metrics[ticker], corr_metrics,
         )
+        # Apply correlation-based exposure cap
+        cap_mult = corr_caps.get(ticker, 1.0)
+        if cap_mult < 1.0:
+            limit.final_pct = round(limit.final_pct * cap_mult, 4)
+            limit.max_notional = round(portfolio_value * limit.final_pct, 2)
         position_limits[ticker] = limit
         allowed = compute_allowed_actions(
             ticker, portfolio.state, limit, current_prices.get(ticker, 0),
@@ -313,6 +355,7 @@ def main(argv: list[str] | None = None) -> None:
     print("[4/6] Synthesizing decisions...")
 
     QUORUM_THRESHOLD = 3  # CF-COMP-021: minimum distinct non-neutral signals
+    CRYPTO_QUORUM_THRESHOLD = 2  # Crypto quant-only: 3 analysts, 67% floor
     SCORE_THRESHOLD = 0.3  # Normalized score threshold for action
 
     decisions: dict[str, dict[str, Any]] = {}
@@ -326,11 +369,12 @@ def main(argv: list[str] | None = None) -> None:
             if sig.signal != "neutral"
         ]
 
-        if len(non_neutral) < QUORUM_THRESHOLD:
+        quorum = CRYPTO_QUORUM_THRESHOLD if is_crypto(ticker) else QUORUM_THRESHOLD
+        if len(non_neutral) < quorum:
             decisions[ticker] = {
                 "action": "hold",
                 "quantity": 0,
-                "reasoning": (f"Quorum not met: {len(non_neutral)}/{QUORUM_THRESHOLD} "
+                "reasoning": (f"Quorum not met: {len(non_neutral)}/{quorum} "
                               f"non-neutral signals"),
                 "weighted_score": 0.0,
             }

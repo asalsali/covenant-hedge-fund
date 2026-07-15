@@ -52,6 +52,9 @@ _CG_API_KEY: str | None = os.environ.get("COINGECKO_API_KEY")
 # Use pro base URL if a paid key is detected, otherwise demo
 CG_BASE_URL = "https://api.coingecko.com/api/v3"
 
+# Track whether we have already warned about missing key (once per process)
+_warned_no_key: bool = False
+
 # Timestamp of last CoinGecko request, for rate limiting
 _last_cg_request: float = 0.0
 _CG_MIN_INTERVAL: float = 6.0  # seconds between requests
@@ -90,6 +93,18 @@ def _cg_request(path: str, params: dict[str, str] | None = None) -> dict | None:
     Returns:
         Parsed JSON response dict, or None on failure.
     """
+    global _warned_no_key
+
+    if not _CG_API_KEY:
+        if not _warned_no_key:
+            print(
+                "  WARNING: COINGECKO_API_KEY not set. "
+                "Crypto metrics will be unavailable (price-only via yfinance). "
+                "Get a free key at https://www.coingecko.com/en/api/pricing"
+            )
+            _warned_no_key = True
+        return None
+
     _cg_rate_limit()
 
     url = f"{CG_BASE_URL}{path}"
@@ -100,23 +115,41 @@ def _cg_request(path: str, params: dict[str, str] | None = None) -> dict | None:
     headers = {
         "Accept": "application/json",
         "User-Agent": "CovenantHedgeFund/1.0",
+        "x-cg-demo-api-key": _CG_API_KEY,
     }
-    # CoinGecko free tier now requires an API key
-    if _CG_API_KEY:
-        headers["x-cg-demo-api-key"] = _CG_API_KEY
 
     req = urllib.request.Request(url, headers=headers)
 
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 return data
-        except (urllib.error.URLError, urllib.error.HTTPError, Exception):
-            if attempt == 0:
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                # Rate limited -- back off exponentially
+                wait = _CG_MIN_INTERVAL * (2 ** attempt)
+                print(f"  CoinGecko rate limited (429), waiting {wait:.0f}s...")
+                time.sleep(wait)
+            elif e.code == 401:
+                print(
+                    "  WARNING: CoinGecko API key rejected (401). "
+                    "Check COINGECKO_API_KEY in .env"
+                )
+                return None
+            elif attempt < 2:
                 time.sleep(5)
             else:
                 return None
+        except (urllib.error.URLError, Exception) as e:
+            if attempt < 2:
+                time.sleep(5)
+            else:
+                from src.data.api import DataFetchError
+                raise DataFetchError(
+                    coin_id, "coingecko",
+                    f"Failed after 3 attempts: {type(e).__name__}: {e}",
+                )
     return None
 
 
