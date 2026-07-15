@@ -14,13 +14,15 @@ import numpy as np
 
 from src.agents.base import BaseAnalyst
 from src.agents.value import (
+    _ALL_SKILLS,
     _extract_value_facts,
     _pad,
     _parse_llm_signal,
     _to_float,
 )
-from src.llm import LLM_INSTRUCTION_SUFFIX, call_llm
+from src.llm import LLM_INSTRUCTION_SUFFIX, _FALLBACK_RESPONSE, call_llm
 from src.models import AnalystSignal
+from src.skills import format_skills_prompt, get_skills_for_analyst
 
 
 # ---------------------------------------------------------------------------
@@ -216,8 +218,13 @@ def _run_macro_analyst(
     market_data: dict[str, Any],
     fact_extractor: Any,
 ) -> dict[str, AnalystSignal]:
-    """Shared LLM analyst execution pattern for macro analysts."""
-    system_prompt = analyst.philosophy + LLM_INSTRUCTION_SUFFIX
+    """Shared LLM analyst execution pattern for macro analysts.
+
+    Three-tier failure handling mirrors _run_llm_analyst in value.py.
+    """
+    matched_skills = get_skills_for_analyst(analyst.name, _ALL_SKILLS)
+    skills_appendix = format_skills_prompt(matched_skills)
+    system_prompt = analyst.philosophy + skills_appendix + LLM_INSTRUCTION_SUFFIX
     results: dict[str, AnalystSignal] = {}
 
     for ticker in tickers:
@@ -237,7 +244,21 @@ def _run_macro_analyst(
 
         user_prompt = f"Analyze {ticker}. Here are the financial facts:\n{json.dumps(facts, indent=2)}"
         response = call_llm(system_prompt, user_prompt)
-        results[ticker] = _parse_llm_signal(response)
+
+        # Tier 2: LLM call failure
+        if response == _FALLBACK_RESPONSE:
+            results[ticker] = AnalystSignal(
+                signal="neutral",
+                confidence=0,
+                reasoning=_pad("LLM unavailable (abstained)"),
+                abstained=True,
+            )
+            continue
+
+        # Tier 3: LLM responded but parse may fail
+        results[ticker] = _parse_llm_signal(
+            response, ticker=ticker, analyst=analyst.name,
+        )
 
     return results
 
@@ -496,14 +517,29 @@ class NewsSentimentAnalyst(BaseAnalyst):
 
             # Still call LLM with what we have -- it can infer sentiment
             # from financial trajectory, but will note data limitations
-            system_prompt = self.philosophy + LLM_INSTRUCTION_SUFFIX
+            my_skills = get_skills_for_analyst(self.name, _ALL_SKILLS)
+            system_prompt = self.philosophy + format_skills_prompt(my_skills) + LLM_INSTRUCTION_SUFFIX
             user_prompt = (
                 f"Analyze {ticker}. Note: real-time news data is NOT available. "
                 f"You can only infer sentiment from financial metrics.\n"
                 f"{json.dumps(facts, indent=2)}"
             )
             response = call_llm(system_prompt, user_prompt)
-            signal = _parse_llm_signal(response)
+
+            if response == _FALLBACK_RESPONSE:
+                results[ticker] = AnalystSignal(
+                    signal="neutral", confidence=0,
+                    reasoning=_pad("LLM unavailable (abstained)"),
+                    abstained=True,
+                )
+                continue
+
+            signal = _parse_llm_signal(
+                response, ticker=ticker, analyst=self.name,
+            )
+            if signal.abstained:
+                results[ticker] = signal
+                continue
 
             # Cap confidence since we lack actual news data
             capped_confidence = min(signal.confidence, 30)

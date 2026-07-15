@@ -11,9 +11,10 @@ import json
 from typing import Any
 
 from src.agents.base import BaseAnalyst
-from src.agents.value import _pad, _parse_llm_signal
-from src.llm import LLM_INSTRUCTION_SUFFIX, call_llm
+from src.agents.value import _ALL_SKILLS, _pad, _parse_llm_signal
+from src.llm import LLM_INSTRUCTION_SUFFIX, _FALLBACK_RESPONSE, call_llm
 from src.models import AnalystSignal
+from src.skills import format_skills_prompt, get_skills_for_analyst
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +325,8 @@ class CryptoMacroAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        system_prompt = self.philosophy + LLM_INSTRUCTION_SUFFIX
+        _my_skills = get_skills_for_analyst(self.name, _ALL_SKILLS)
+        system_prompt = self.philosophy + format_skills_prompt(_my_skills) + LLM_INSTRUCTION_SUFFIX
         results: dict[str, AnalystSignal] = {}
 
         for ticker in tickers:
@@ -346,7 +348,18 @@ class CryptoMacroAnalyst(BaseAnalyst):
                 f"{json.dumps(facts, indent=2)}"
             )
             response = call_llm(system_prompt, user_prompt)
-            results[ticker] = _parse_llm_signal(response)
+
+            if response == _FALLBACK_RESPONSE:
+                results[ticker] = AnalystSignal(
+                    signal="neutral", confidence=0,
+                    reasoning=_pad("LLM unavailable (abstained)"),
+                    abstained=True,
+                )
+                continue
+
+            results[ticker] = _parse_llm_signal(
+                response, ticker=ticker, analyst=self.name,
+            )
 
         return results
 
@@ -426,7 +439,8 @@ class TokenomicsAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        system_prompt = self.philosophy + LLM_INSTRUCTION_SUFFIX
+        _my_skills = get_skills_for_analyst(self.name, _ALL_SKILLS)
+        system_prompt = self.philosophy + format_skills_prompt(_my_skills) + LLM_INSTRUCTION_SUFFIX
         results: dict[str, AnalystSignal] = {}
 
         for ticker in tickers:
@@ -448,7 +462,18 @@ class TokenomicsAnalyst(BaseAnalyst):
                 f"{json.dumps(facts, indent=2)}"
             )
             response = call_llm(system_prompt, user_prompt)
-            results[ticker] = _parse_llm_signal(response)
+
+            if response == _FALLBACK_RESPONSE:
+                results[ticker] = AnalystSignal(
+                    signal="neutral", confidence=0,
+                    reasoning=_pad("LLM unavailable (abstained)"),
+                    abstained=True,
+                )
+                continue
+
+            results[ticker] = _parse_llm_signal(
+                response, ticker=ticker, analyst=self.name,
+            )
 
         return results
 
@@ -494,7 +519,8 @@ class KwokAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        system_prompt = self.philosophy + LLM_INSTRUCTION_SUFFIX
+        _my_skills = get_skills_for_analyst(self.name, _ALL_SKILLS)
+        system_prompt = self.philosophy + format_skills_prompt(_my_skills) + LLM_INSTRUCTION_SUFFIX
         results: dict[str, AnalystSignal] = {}
 
         for ticker in tickers:
@@ -516,7 +542,18 @@ class KwokAnalyst(BaseAnalyst):
                 f"{json.dumps(facts, indent=2)}"
             )
             response = call_llm(system_prompt, user_prompt)
-            results[ticker] = _parse_llm_signal(response)
+
+            if response == _FALLBACK_RESPONSE:
+                results[ticker] = AnalystSignal(
+                    signal="neutral", confidence=0,
+                    reasoning=_pad("LLM unavailable (abstained)"),
+                    abstained=True,
+                )
+                continue
+
+            results[ticker] = _parse_llm_signal(
+                response, ticker=ticker, analyst=self.name,
+            )
 
         return results
 
@@ -564,7 +601,8 @@ class WooAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        system_prompt = self.philosophy + LLM_INSTRUCTION_SUFFIX
+        _my_skills = get_skills_for_analyst(self.name, _ALL_SKILLS)
+        system_prompt = self.philosophy + format_skills_prompt(_my_skills) + LLM_INSTRUCTION_SUFFIX
         results: dict[str, AnalystSignal] = {}
 
         for ticker in tickers:
@@ -586,7 +624,18 @@ class WooAnalyst(BaseAnalyst):
                 f"{json.dumps(facts, indent=2)}"
             )
             response = call_llm(system_prompt, user_prompt)
-            results[ticker] = _parse_llm_signal(response)
+
+            if response == _FALLBACK_RESPONSE:
+                results[ticker] = AnalystSignal(
+                    signal="neutral", confidence=0,
+                    reasoning=_pad("LLM unavailable (abstained)"),
+                    abstained=True,
+                )
+                continue
+
+            results[ticker] = _parse_llm_signal(
+                response, ticker=ticker, analyst=self.name,
+            )
 
         return results
 
@@ -635,7 +684,8 @@ class PlanBAnalyst(BaseAnalyst):
         tickers: list[str],
         market_data: dict[str, Any],
     ) -> dict[str, AnalystSignal]:
-        system_prompt = self.philosophy + LLM_INSTRUCTION_SUFFIX
+        _my_skills = get_skills_for_analyst(self.name, _ALL_SKILLS)
+        system_prompt = self.philosophy + format_skills_prompt(_my_skills) + LLM_INSTRUCTION_SUFFIX
         results: dict[str, AnalystSignal] = {}
 
         for ticker in tickers:
@@ -657,7 +707,18 @@ class PlanBAnalyst(BaseAnalyst):
                 f"{json.dumps(facts, indent=2)}"
             )
             response = call_llm(system_prompt, user_prompt)
-            results[ticker] = _parse_llm_signal(response)
+
+            if response == _FALLBACK_RESPONSE:
+                results[ticker] = AnalystSignal(
+                    signal="neutral", confidence=0,
+                    reasoning=_pad("LLM unavailable (abstained)"),
+                    abstained=True,
+                )
+                continue
+
+            results[ticker] = _parse_llm_signal(
+                response, ticker=ticker, analyst=self.name,
+            )
 
         return results
 

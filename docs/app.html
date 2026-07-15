@@ -858,10 +858,10 @@ footer .footer-accent {
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════
-// DEMO DATA — realistic numbers matching actual backtest results
+// DEMO DATA — used as fallback when report-data.json is not available
 // ═══════════════════════════════════════════════════════════════════════
 
-const DATA = {
+const DEMO_DATA = {
   metadata: {
     tickers: ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "JPM", "JNJ", "XOM"],
     mode: "full",
@@ -915,6 +915,9 @@ const DATA = {
   trades: generateTrades(),
   signals: generateSignals()
 };
+
+// Mutable reference — overwritten if report-data.json loads successfully
+let DATA = DEMO_DATA;
 
 function generateEquityCurve() {
   const curve = [];
@@ -1667,10 +1670,35 @@ async function checkOllama() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// DATA LOADING — try report-data.json, fall back to demo data
+// ═══════════════════════════════════════════════════════════════════════
+
+async function loadReportData() {
+  try {
+    const res = await fetch('report-data.json');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+
+    if (!json.metadata || !json.performance || !json.equity_curve) {
+      throw new Error('Missing required fields in report-data.json');
+    }
+
+    if (!json.positions) json.positions = {};
+
+    DATA = json;
+    console.log('Loaded real backtest data from report-data.json');
+  } catch (err) {
+    console.log('Using demo data (report-data.json not available:', err.message + ')');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════════════
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadReportData();
+
   renderDashboard();
   renderAnalysts();
   renderPerformance();

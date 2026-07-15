@@ -22,11 +22,22 @@ class AnalystSignal(BaseModel):
     This is the standard interface between analysts and the portfolio
     decision layer. All analysts -- whether LLM-augmented or pure
     computation -- produce this exact shape.
+
+    Three failure tiers:
+      1. Data fetch error -> DataFetchError exception (crash, fail loud)
+      2. LLM call failure -> abstain signal (confidence=0, abstained=True)
+      3. LLM parse failure -> abstain signal + raw response persisted to
+         cache/llm-debug/ for debugging
+
+    An abstained signal means "couldn't analyze" -- distinct from a
+    genuine neutral ("I have no view"). Abstained signals do NOT count
+    toward quorum.
     """
 
     signal: Literal["bullish", "bearish", "neutral"]
     confidence: int = Field(ge=0, le=100, description="Confidence level 0-100")
     reasoning: str = Field(max_length=200, description="Concise reasoning for the signal")
+    abstained: bool = Field(default=False, description="True when LLM call or parse failed")
 
 
 class PortfolioDecision(BaseModel):

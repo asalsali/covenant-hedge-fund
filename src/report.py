@@ -575,6 +575,124 @@ def _build_ticker_details(signals: dict[str, Any]) -> str:
     return html
 
 
+def _build_car_section_from_dict(car: dict[str, Any]) -> str:
+    """Build CAR HTML section from the serialized dict."""
+    verdict = car.get("verdict", "")
+    n_events = car.get("n_events", 0)
+    n_sig = car.get("n_significant", 0)
+    agg = car.get("aggregate", {})
+
+    if n_events == 0:
+        return (
+            '<div class="section"><h2>Statistical Validation (CAR)</h2>'
+            '<p style="color: var(--text-muted);">No events available.</p></div>'
+        )
+
+    if "CONFIRMED" in verdict and "NOT" not in verdict:
+        vc, vi = "var(--positive)", "PASS"
+    elif "INCONCLUSIVE" in verdict:
+        vc, vi = "var(--warning)", "MIXED"
+    else:
+        vc, vi = "var(--negative)", "FAIL"
+
+    html = f"""<div class="section">
+    <h2>Statistical Validation (CAR)
+        <span style="color:{vc};font-size:0.8rem;font-weight:600;
+              margin-left:12px;padding:2px 10px;border:1px solid {vc};
+              border-radius:4px;">{vi}</span></h2>
+    <p style="color:var(--text-secondary);margin-bottom:16px;">
+        Cumulative Abnormal Returns measure whether signals produce
+        returns beyond market exposure (beta).</p>
+    <div style="background:var(--bg-secondary);border:1px solid var(--border);
+                border-radius:8px;padding:16px;margin-bottom:20px;">
+        <p style="color:{vc};font-weight:600;margin:0;">{verdict}</p>
+        <p style="color:var(--text-muted);margin:8px 0 0 0;font-size:0.85rem;">
+            {n_events} events, {n_sig} significant (p&lt;0.05)</p></div>
+"""
+
+    if agg:
+        html += """<h3 style="color:var(--text-primary);margin-bottom:12px;">
+            Aggregate Results</h3>
+    <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+    <thead><tr style="border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:8px;color:var(--text-secondary);">Window</th>
+        <th style="text-align:right;padding:8px;color:var(--text-secondary);">Mean CAR</th>
+        <th style="text-align:right;padding:8px;color:var(--text-secondary);">t-stat</th>
+        <th style="text-align:right;padding:8px;color:var(--text-secondary);">p-value</th>
+        <th style="text-align:right;padding:8px;color:var(--text-secondary);">% Positive</th>
+    </tr></thead><tbody>
+"""
+        for label, vals in agg.items():
+            mc = vals.get("mean_car", 0)
+            cc = "var(--positive)" if mc > 0 else "var(--negative)"
+            p = vals.get("agg_p_value", 1)
+            sig = ""
+            if p < 0.001:
+                sig = " ***"
+            elif p < 0.01:
+                sig = " **"
+            elif p < 0.05:
+                sig = " *"
+            html += (
+                f'    <tr style="border-bottom:1px solid var(--border);">'
+                f'<td style="padding:8px;color:var(--text-primary);">{label}</td>'
+                f'<td style="padding:8px;text-align:right;color:{cc};">'
+                f'{mc:+.4f}{sig}</td>'
+                f'<td style="padding:8px;text-align:right;color:var(--text-primary);">'
+                f'{vals.get("agg_t_stat", 0):.3f}</td>'
+                f'<td style="padding:8px;text-align:right;color:var(--text-primary);">'
+                f'{p:.4f}</td>'
+                f'<td style="padding:8px;text-align:right;color:var(--text-primary);">'
+                f'{vals.get("pct_positive", 0):.0f}%</td></tr>\n'
+            )
+        html += "    </tbody></table></div>\n"
+
+    # Per-event details
+    events = car.get("events", [])
+    valid = [e for e in events if "error" not in e]
+    if valid:
+        html += f"""
+    <details style="margin-top:20px;">
+        <summary style="cursor:pointer;color:var(--accent);font-weight:500;
+                        padding:8px 0;">Per-Event Details ({len(valid)} events)</summary>
+        <div style="overflow-x:auto;margin-top:12px;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+        <thead><tr style="border-bottom:1px solid var(--border);">
+            <th style="text-align:left;padding:6px;color:var(--text-secondary);">Date</th>
+            <th style="text-align:left;padding:6px;color:var(--text-secondary);">Ticker</th>
+            <th style="text-align:left;padding:6px;color:var(--text-secondary);">Dir</th>
+"""
+        # Window headers from first event
+        if valid and "windows" in valid[0]:
+            for w in valid[0]["windows"]:
+                html += (
+                    f'            <th style="text-align:right;padding:6px;'
+                    f'color:var(--text-secondary);">CAR {w["window"]}</th>\n'
+                )
+        html += "        </tr></thead><tbody>\n"
+
+        for ev in valid:
+            html += (
+                f'        <tr style="border-bottom:1px solid var(--border);">'
+                f'<td style="padding:6px;color:var(--text-primary);">{ev["date"]}</td>'
+                f'<td style="padding:6px;color:var(--text-primary);">{ev["ticker"]}</td>'
+                f'<td style="padding:6px;color:var(--text-primary);">{ev["action"]}</td>'
+            )
+            for w in ev.get("windows", []):
+                c = w.get("car", 0)
+                cc = "var(--positive)" if c > 0 else "var(--negative)"
+                html += (
+                    f'<td style="padding:6px;text-align:right;color:{cc};">'
+                    f'{c:+.4f}{w.get("significance", "")}</td>'
+                )
+            html += "</tr>\n"
+        html += "        </tbody></table></div></details>\n"
+
+    html += "</div>"
+    return html
+
+
 def generate_report(data: dict[str, Any]) -> str:
     """Generate a self-contained HTML backtest report.
 
@@ -600,6 +718,22 @@ def generate_report(data: dict[str, Any]) -> str:
     trade_table = _build_trade_table(trades)
     ticker_details = _build_ticker_details(signals)
 
+    # CAR statistical validation section
+    car_section = ""
+    car_data = data.get("car")
+    if car_data:
+        try:
+            from src.event_study import CARSummary
+            from src.event_study_report import build_car_html_section
+            # Reconstruct summary from the engine's stored object
+            # The backtest stores the live CARSummary on the engine,
+            # but report generation receives the dict. We need the engine's
+            # car_summary directly, so we check if it was passed through.
+            # For now, build a minimal HTML from the dict.
+            car_section = _build_car_section_from_dict(car_data)
+        except Exception:
+            car_section = _build_car_section_from_dict(car_data)
+
     footer_text = (
         f"Generated {metadata['run_date']} | "
         f"{metadata['mode'].replace('-', ' ').title()} mode | "
@@ -614,6 +748,7 @@ def generate_report(data: dict[str, Any]) -> str:
 {header}
 {cards}
 {chart}
+{car_section}
 {heatmap}
 {trade_table}
 {ticker_details}

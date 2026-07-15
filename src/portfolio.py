@@ -57,6 +57,8 @@ class Portfolio:
         self,
         initial_cash: float = 100_000.0,
         margin_requirement: float = 0.5,
+        commission_rate: float = 0.001,
+        slippage_rate: float = 0.0005,
     ) -> None:
         self.state = PortfolioState(
             cash=initial_cash,
@@ -65,6 +67,24 @@ class Portfolio:
         self.trades: list[TradeRecord] = []
         self.daily_values: list[tuple[str, float]] = []
         self.initial_value: float = initial_cash
+        self.commission_rate: float = commission_rate   # e.g. 0.001 = 10 bps
+        self.slippage_rate: float = slippage_rate       # e.g. 0.0005 = 5 bps
+        self.total_transaction_costs: float = 0.0
+
+    # ------------------------------------------------------------------
+    # Transaction cost helpers
+    # ------------------------------------------------------------------
+
+    def _compute_transaction_cost(self, notional: float) -> float:
+        """Compute total transaction cost (commission + slippage) for a trade.
+
+        Args:
+            notional: Dollar value of the trade.
+
+        Returns:
+            Total cost in dollars.
+        """
+        return notional * (self.commission_rate + self.slippage_rate)
 
     # ------------------------------------------------------------------
     # Trade execution
@@ -94,13 +114,16 @@ class Portfolio:
             ValueError: If insufficient cash.
         """
         notional = quantity * price
-        if notional > self.state.cash:
+        txn_cost = self._compute_transaction_cost(notional)
+        total_cost = notional + txn_cost
+        if total_cost > self.state.cash:
             raise ValueError(
-                f"Insufficient cash for buy: need ${notional:.2f}, "
+                f"Insufficient cash for buy: need ${total_cost:.2f}, "
                 f"have ${self.state.cash:.2f}"
             )
 
-        self.state.cash -= notional
+        self.state.cash -= total_cost
+        self.total_transaction_costs += txn_cost
 
         pos = self.state.positions.get(ticker, Position(ticker=ticker))
         # Weighted average cost
@@ -153,10 +176,13 @@ class Portfolio:
             )
 
         notional = quantity * price
+        txn_cost = self._compute_transaction_cost(notional)
+        proceeds = notional - txn_cost
         cost_basis = quantity * pos.avg_long_cost
-        realized_pnl = notional - cost_basis
+        realized_pnl = proceeds - cost_basis
 
-        self.state.cash += notional
+        self.state.cash += proceeds
+        self.total_transaction_costs += txn_cost
         pos.long_shares -= quantity
 
         # Track realized gains
@@ -205,6 +231,7 @@ class Portfolio:
             ValueError: If insufficient margin available.
         """
         notional = quantity * price
+        txn_cost = self._compute_transaction_cost(notional)
         margin_needed = notional * self.state.margin_requirement
 
         margin_available = self.state.cash - self.state.margin_used
@@ -214,8 +241,9 @@ class Portfolio:
                 f"available ${margin_available:.2f}"
             )
 
-        self.state.cash += notional
+        self.state.cash += notional - txn_cost
         self.state.margin_used += margin_needed
+        self.total_transaction_costs += txn_cost
 
         pos = self.state.positions.get(ticker, Position(ticker=ticker))
         total_cost = pos.avg_short_cost * pos.short_shares + notional
@@ -268,11 +296,13 @@ class Portfolio:
             )
 
         notional = quantity * price
+        txn_cost = self._compute_transaction_cost(notional)
         cost_basis = quantity * pos.avg_short_cost
         # Short P&L is inverted: profit when price drops
-        realized_pnl = cost_basis - notional
+        realized_pnl = cost_basis - (notional + txn_cost)
 
-        self.state.cash -= notional
+        self.state.cash -= (notional + txn_cost)
+        self.total_transaction_costs += txn_cost
 
         # Release margin proportionally
         margin_release = (quantity / pos.short_shares) * (

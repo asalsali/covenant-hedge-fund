@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 
 from src.agents.base import BaseAnalyst
+from src.snapshot import get_sector_wacc
 from src.models import AnalystSignal
 
 
@@ -385,8 +386,9 @@ class ValuationAnalyst(BaseAnalyst):
                 else:
                     sc.append((1.5 - peg) / 0.5)
 
-        # Simple DCF
-        dcf = self._dcf(li, mc)
+        # Simple DCF (with sector-appropriate WACC)
+        sector = data.get("sector")
+        dcf = self._dcf(li, mc, sector=sector)
         if dcf:
             avail += 1; sc.append(dcf[0]); reasons.append(dcf[1])
 
@@ -401,8 +403,16 @@ class ValuationAnalyst(BaseAnalyst):
             reasoning=_pad(f"{r} ({avail}/{TP} metrics)"))
 
     @staticmethod
-    def _dcf(li: list[dict], mc: float | None) -> tuple[float, str] | None:
-        """Simple 5-year DCF: grow recent FCF, discount at 10%."""
+    def _dcf(
+        li: list[dict],
+        mc: float | None,
+        sector: str | None = None,
+    ) -> tuple[float, str] | None:
+        """Simple 5-year DCF with sector-appropriate WACC.
+
+        Uses sector WACC mid-point instead of a blanket 10% discount
+        rate. Falls back to 10% when sector is unknown.
+        """
         if not li or not mc or mc <= 0:
             return None
         fv = [_to_float(l.get("free_cash_flow")) for l in li]
@@ -415,7 +425,8 @@ class ValuationAnalyst(BaseAnalyst):
             gr = max(-0.10, min(0.20, gr))
         else:
             gr = 0.05
-        dr, tg = 0.10, 0.03
+        wacc = get_sector_wacc(sector)
+        dr, tg = wacc["mid"], 0.03
         dcf_val, proj = 0.0, recent
         for y in range(1, 6):
             proj *= (1.0 + gr)

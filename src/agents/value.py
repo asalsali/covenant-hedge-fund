@@ -8,11 +8,21 @@ prompts for LLM-based analysis of fundamental data.
 from __future__ import annotations
 
 import json
+import pathlib
+from datetime import datetime, timezone
 from typing import Any
 
 from src.agents.base import BaseAnalyst
-from src.llm import LLM_INSTRUCTION_SUFFIX, call_llm
+from src.llm import LLM_INSTRUCTION_SUFFIX, _FALLBACK_RESPONSE, call_llm
 from src.models import AnalystSignal
+from src.skills import format_skills_prompt, get_skills_for_analyst, load_skills
+from src.snapshot import build_snapshot
+
+# Load skills once at import time
+_ALL_SKILLS = load_skills()
+
+# Directory for persisting raw LLM responses on parse failure
+_LLM_DEBUG_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "cache" / "llm-debug"
 
 
 # ---------------------------------------------------------------------------
@@ -83,8 +93,36 @@ def _extract_value_facts(ticker: str, data: dict) -> dict:
     }
 
 
-def _parse_llm_signal(response: str) -> AnalystSignal:
-    """Parse LLM JSON response into AnalystSignal."""
+def _persist_llm_debug(
+    response: str,
+    ticker: str = "unknown",
+    analyst: str = "unknown",
+) -> None:
+    """Persist a raw LLM response to cache/llm-debug/ for debugging.
+
+    Called when LLM response parsing fails so the raw output can be
+    inspected later. Files are named with timestamp + ticker + analyst.
+    """
+    try:
+        _LLM_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        filename = f"{ts}_{ticker}_{analyst}.txt"
+        (_LLM_DEBUG_DIR / filename).write_text(response, encoding="utf-8")
+    except Exception:
+        pass  # Debug persistence is best-effort, never crash
+
+
+def _parse_llm_signal(
+    response: str,
+    *,
+    ticker: str = "unknown",
+    analyst: str = "unknown",
+) -> AnalystSignal:
+    """Parse LLM JSON response into AnalystSignal.
+
+    On parse failure, persists the raw response to cache/llm-debug/
+    and returns an abstain signal (confidence=0, abstained=True).
+    """
     try:
         # Strip markdown code fences if present
         text = response.strip()
@@ -105,10 +143,13 @@ def _parse_llm_signal(response: str) -> AnalystSignal:
             reasoning=_pad(reasoning),
         )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        # LLM parse failure: persist raw response for debugging
+        _persist_llm_debug(response, ticker=ticker, analyst=analyst)
         return AnalystSignal(
             signal="neutral",
             confidence=0,
-            reasoning=_pad("Failed to parse LLM response"),
+            reasoning=_pad("LLM parse failed (abstained)"),
+            abstained=True,
         )
 
 
@@ -118,28 +159,57 @@ def _run_llm_analyst(
     market_data: dict[str, Any],
     fact_extractor: Any = None,
 ) -> dict[str, AnalystSignal]:
-    """Shared LLM analyst execution pattern."""
+    """Shared LLM analyst execution pattern.
+
+    Three-tier failure handling:
+      1. Data layer errors -> DataFetchError (already raised upstream)
+      2. LLM call failure -> abstain signal (confidence=0, abstained=True)
+      3. LLM parse failure -> abstain signal + raw response persisted
+    """
     extractor = fact_extractor or _extract_value_facts
-    system_prompt = analyst.philosophy + LLM_INSTRUCTION_SUFFIX
+    matched_skills = get_skills_for_analyst(analyst.name, _ALL_SKILLS)
+    skills_appendix = format_skills_prompt(matched_skills)
+    system_prompt = analyst.philosophy + skills_appendix + LLM_INSTRUCTION_SUFFIX
     results: dict[str, AnalystSignal] = {}
 
     for ticker in tickers:
         data = market_data.get(ticker, {})
-        facts = extractor(ticker, data)
 
-        # Check if we have any meaningful data
-        meaningful_keys = [k for k, v in facts.items()
-                          if k not in ("ticker", "line_items") and v is not None]
-        if not meaningful_keys:
+        # Build pre-computed snapshot -- all arithmetic done in Python,
+        # LLM receives ready-made ratios and trends, not raw numbers.
+        snapshot = build_snapshot(ticker, data)
+        rendered = snapshot.render()
+
+        # Check if we have any meaningful data (snapshot with no metrics)
+        has_data = any(
+            v is not None
+            for k, v in snapshot.metrics.items()
+            if k not in ("sector_wacc", "cash_flow_summary", "periods_available")
+        )
+        if not has_data:
             results[ticker] = AnalystSignal(
                 signal="neutral", confidence=0,
                 reasoning=_pad("No financial data available"),
             )
             continue
 
-        user_prompt = f"Analyze {ticker}. Here are the financial facts:\n{json.dumps(facts, indent=2)}"
+        user_prompt = f"Analyze {ticker}. All ratios are pre-computed -- use them directly, do not recalculate.\n\n{rendered}"
         response = call_llm(system_prompt, user_prompt)
-        results[ticker] = _parse_llm_signal(response)
+
+        # Tier 2: LLM call failure (Ollama down, OOM, etc.)
+        if response == _FALLBACK_RESPONSE:
+            results[ticker] = AnalystSignal(
+                signal="neutral",
+                confidence=0,
+                reasoning=_pad("LLM unavailable (abstained)"),
+                abstained=True,
+            )
+            continue
+
+        # Tier 3: LLM responded but parse may fail (handled inside)
+        results[ticker] = _parse_llm_signal(
+            response, ticker=ticker, analyst=analyst.name,
+        )
 
     return results
 

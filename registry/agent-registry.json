@@ -44,6 +44,17 @@
       "parentIds": [],
       "bornAt": "2026-07-10T00:00:00Z",
       "tokensExpected": "high"
+    },
+    {
+      "id": "synthesist-20260715-competitive-features",
+      "type": "synthesist",
+      "mandate": "Implement top 3 competitive features from virattt repos: LLM caching, fail-loud data contracts, correlation exposure caps",
+      "generation": 2,
+      "status": "archived",
+      "parentIds": [],
+      "bornAt": "2026-07-15T00:00:00Z",
+      "archivedAt": "2026-07-15T00:00:00Z",
+      "tokensExpected": "medium"
     }
   ]
 }

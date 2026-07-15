@@ -85,6 +85,9 @@ class BacktestEngine:
         initial_cash: float = 100_000.0,
         show_reasoning: bool = False,
         llm_lite: bool = False,
+        edge_triggered: bool = False,
+        commission_rate: float = 0.001,
+        slippage_rate: float = 0.0005,
     ) -> None:
         self.tickers = [t.upper() for t in tickers]
         self.start_date = start_date
@@ -92,8 +95,15 @@ class BacktestEngine:
         self.initial_cash = initial_cash
         self.show_reasoning = show_reasoning
         self.llm_lite = llm_lite
+        self.edge_triggered = edge_triggered
+        self.commission_rate = commission_rate
+        self.slippage_rate = slippage_rate
 
-        self.portfolio = Portfolio(initial_cash=initial_cash)
+        self.portfolio = Portfolio(
+            initial_cash=initial_cash,
+            commission_rate=commission_rate,
+            slippage_rate=slippage_rate,
+        )
         self.analysts = [AnalystClass() for AnalystClass in QUANT_ANALYSTS]
 
         # Add crypto-specialized quant analysts when any ticker is crypto
@@ -139,6 +149,10 @@ class BacktestEngine:
         # Per-rebalance signal and decision history for report persistence
         self.signal_history: dict[str, dict[str, dict[str, Any]]] = {}
         self.decision_history: dict[str, dict[str, dict[str, Any]]] = {}
+
+        # Edge-triggered signal state: all tickers start armed (ready)
+        self._armed: dict[str, bool] = {t: True for t in self.tickers}
+        self._edge_filtered_log: list[dict[str, str]] = []
 
         # Performance attributes set after run() completes
         self.alpha: float | None = None
@@ -254,6 +268,105 @@ class BacktestEngine:
         ]
 
     # ------------------------------------------------------------------
+    # Edge-triggered signal filter
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _action_direction(action: str) -> str:
+        """Map a trade action to a directional label."""
+        if action in ("buy",):
+            return "long"
+        if action in ("sell", "short"):
+            return "short"
+        return "neutral"
+
+    def _apply_edge_filter(
+        self,
+        decisions: dict[str, dict[str, Any]],
+        current_date: str,
+    ) -> dict[str, dict[str, Any]]:
+        """Filter decisions through armed/disarmed state per ticker.
+
+        Rules:
+        - If a ticker is armed, the decision passes through unchanged.
+          Opening a position (buy/short) disarms the ticker.
+        - If a ticker is disarmed and the new signal is in the *same*
+          direction as the existing position, skip it (hold).
+        - If a ticker is disarmed but the signal *reverses* direction
+          (long->short or short->long), allow it (new edge).
+        - Closing a position (sell/cover) or a neutral/hold decision
+          re-arms the ticker.
+
+        Returns a (possibly filtered) copy of decisions.
+        """
+        if not self.edge_triggered:
+            return decisions
+
+        filtered: dict[str, dict[str, Any]] = {}
+
+        for ticker, dec in decisions.items():
+            action = dec["action"]
+            direction = self._action_direction(action)
+
+            if action == "hold" or dec.get("quantity", 0) == 0:
+                # Neutral / no-op: re-arm the ticker
+                if not self._armed.get(ticker, True):
+                    self._armed[ticker] = True
+                filtered[ticker] = dec
+                continue
+
+            if action in ("sell", "cover"):
+                # Closing a position: re-arm the ticker
+                self._armed[ticker] = True
+                filtered[ticker] = dec
+                continue
+
+            # action is buy or short — an opening signal
+            if self._armed.get(ticker, True):
+                # Armed: allow the trade, then disarm
+                filtered[ticker] = dec
+                self._armed[ticker] = False
+                continue
+
+            # Disarmed: check whether this is a same-direction repeat
+            # or a directional reversal
+            pos = self.portfolio.state.positions.get(ticker)
+            if pos:
+                has_long = pos.long_shares > 0
+                has_short = pos.short_shares > 0
+            else:
+                has_long = False
+                has_short = False
+
+            same_direction = (
+                (direction == "long" and has_long)
+                or (direction == "short" and has_short)
+            )
+
+            if same_direction:
+                # Skip: overlapping signal in same direction
+                self._edge_filtered_log.append({
+                    "date": current_date,
+                    "ticker": ticker,
+                    "action": action,
+                    "reason": "edge-filtered: already positioned, same direction",
+                })
+                filtered[ticker] = {
+                    "action": "hold",
+                    "quantity": 0,
+                    "reasoning": (
+                        f"Edge-filtered: {action} skipped "
+                        f"(already positioned {direction})"
+                    ),
+                    "weighted_score": dec.get("weighted_score", 0.0),
+                }
+            else:
+                # Reversal: new edge — allow the trade, stay disarmed
+                filtered[ticker] = dec
+
+        return filtered
+
+    # ------------------------------------------------------------------
     # Analysis pipeline (mirrors main.py single-shot)
     # ------------------------------------------------------------------
 
@@ -278,7 +391,8 @@ class BacktestEngine:
         # --- Persist signals ---
         if current_date:
             self.signal_history[current_date] = {
-                ticker: {name: {"signal": sig.signal, "confidence": sig.confidence, "reasoning": sig.reasoning}
+                ticker: {name: {"signal": sig.signal, "confidence": sig.confidence,
+                                "reasoning": sig.reasoning, "abstained": sig.abstained}
                          for name, sig in sigs.items()}
                 for ticker, sigs in all_signals.items()
             }
@@ -316,23 +430,33 @@ class BacktestEngine:
 
         for ticker in active_tickers:
             signals = all_signals.get(ticker, {})
+
+            # Filter out abstained signals -- they don't count toward
+            # quorum or synthesis (abstain = "couldn't analyze", not "no view")
+            active_signals = {
+                name: sig for name, sig in signals.items()
+                if not sig.abstained
+            }
+
             non_neutral = [
-                (name, sig) for name, sig in signals.items()
+                (name, sig) for name, sig in active_signals.items()
                 if sig.signal != "neutral"
             ]
 
             quorum = CRYPTO_QUORUM_THRESHOLD if is_crypto(ticker) else QUORUM_THRESHOLD
             if len(non_neutral) < quorum:
+                abstained_count = len(signals) - len(active_signals)
+                abstain_note = f", {abstained_count} abstained" if abstained_count else ""
                 decisions[ticker] = {
                     "action": "hold", "quantity": 0,
-                    "reasoning": f"Quorum not met: {len(non_neutral)}/{quorum}",
+                    "reasoning": f"Quorum not met: {len(non_neutral)}/{quorum}{abstain_note}",
                     "weighted_score": 0.0,
                 }
                 continue
 
             weighted_sum = 0.0
             confidence_sum = 0.0
-            for _name, sig in signals.items():
+            for _name, sig in active_signals.items():
                 direction = {"bullish": 1.0, "bearish": -1.0}.get(sig.signal, 0.0)
                 conf = sig.confidence / 100.0
                 weighted_sum += conf * direction
@@ -390,6 +514,9 @@ class BacktestEngine:
                     "reasoning": f"Score within threshold (score={normalized_score:+.2f})",
                     "weighted_score": normalized_score,
                 }
+
+        # --- Edge-triggered filter ---
+        decisions = self._apply_edge_filter(decisions, current_date)
 
         # --- Persist decisions ---
         if current_date:
@@ -500,7 +627,8 @@ class BacktestEngine:
         # --- Persist signals ---
         if current_date:
             self.signal_history[current_date] = {
-                ticker: {name: {"signal": sig.signal, "confidence": sig.confidence, "reasoning": sig.reasoning}
+                ticker: {name: {"signal": sig.signal, "confidence": sig.confidence,
+                                "reasoning": sig.reasoning, "abstained": sig.abstained}
                          for name, sig in sigs.items()}
                 for ticker, sigs in all_signals.items()
             }
@@ -583,23 +711,33 @@ class BacktestEngine:
 
         for ticker in active_tickers:
             signals = all_signals.get(ticker, {})
+
+            # Filter out abstained signals -- they don't count toward
+            # quorum or synthesis (abstain = "couldn't analyze", not "no view")
+            active_signals = {
+                name: sig for name, sig in signals.items()
+                if not sig.abstained
+            }
+
             non_neutral = [
-                (name, sig) for name, sig in signals.items()
+                (name, sig) for name, sig in active_signals.items()
                 if sig.signal != "neutral"
             ]
 
             quorum = CRYPTO_QUORUM_THRESHOLD if is_crypto(ticker) else QUORUM_THRESHOLD
             if len(non_neutral) < quorum:
+                abstained_count = len(signals) - len(active_signals)
+                abstain_note = f", {abstained_count} abstained" if abstained_count else ""
                 decisions[ticker] = {
                     "action": "hold", "quantity": 0,
-                    "reasoning": f"Quorum not met: {len(non_neutral)}/{quorum}",
+                    "reasoning": f"Quorum not met: {len(non_neutral)}/{quorum}{abstain_note}",
                     "weighted_score": 0.0,
                 }
                 continue
 
             weighted_sum = 0.0
             confidence_sum = 0.0
-            for _name, sig in signals.items():
+            for _name, sig in active_signals.items():
                 direction = {"bullish": 1.0, "bearish": -1.0}.get(sig.signal, 0.0)
                 conf = sig.confidence / 100.0
                 weighted_sum += conf * direction
@@ -657,6 +795,9 @@ class BacktestEngine:
                     "reasoning": f"Score within threshold (score={normalized_score:+.2f})",
                     "weighted_score": normalized_score,
                 }
+
+        # --- Edge-triggered filter ---
+        decisions = self._apply_edge_filter(decisions, current_date)
 
         # --- Persist decisions ---
         if current_date:
@@ -728,9 +869,15 @@ class BacktestEngine:
         print(f"  Cash:       ${self.initial_cash:,.2f}")
         print(f"  Rebalance:  every {REBALANCE_INTERVAL} trading days")
         print(f"  Lookback:   {LOOKBACK_WINDOW} trading days")
+        total_bps = (self.commission_rate + self.slippage_rate) * 10_000
+        print(f"  Txn costs:  {self.commission_rate*10_000:.0f} bps commission "
+              f"+ {self.slippage_rate*10_000:.0f} bps slippage "
+              f"= {total_bps:.0f} bps/trade")
         if self.llm_lite:
             print(f"  LLM personas: {', '.join(a.name for a in self.llm_analysts)}")
             print(f"  LLM dates:  {LLM_LITE_REBALANCE_COUNT} evenly spaced")
+        if self.edge_triggered:
+            print(f"  Edge filter:  ON (prevents overlapping same-direction positions)")
         print()
 
         # -- Fetch all data upfront --
@@ -886,6 +1033,7 @@ class BacktestEngine:
 
             # Record daily portfolio value (every day, not just rebalance)
             self.portfolio.record_daily_value(current_date, current_prices)
+            self._last_current_prices = current_prices
 
         print()
 
@@ -927,6 +1075,27 @@ class BacktestEngine:
         # -- Realized P&L --
         realized_pnl = self.portfolio.state.total_realized_gains
 
+        # -- Event Study (CAR) --
+        self.car_summary = None
+        if spy_prices and self.portfolio.trades:
+            try:
+                from src.event_study import EventStudy
+                from src.event_study_report import format_car_results
+
+                es = EventStudy(all_prices, spy_prices)
+                trade_list = [
+                    {
+                        "date": t.timestamp[:10] if len(t.timestamp) >= 10 else t.timestamp,
+                        "ticker": t.ticker,
+                        "action": t.action,
+                    }
+                    for t in self.portfolio.trades
+                ]
+                self.car_summary = es.analyze_signals(trade_list)
+                print(format_car_results(self.car_summary))
+            except Exception as e:
+                print(f"\n  WARNING: Event study failed: {e}")
+
         # -- Print report --
         self._print_report(
             metrics=metrics,
@@ -957,6 +1126,14 @@ class BacktestEngine:
             print(f"\nReport saved to {report_path}")
         except Exception as e:
             print(f"\nWARNING: Could not generate HTML report: {e}")
+
+        # -- Export JSON for web app dashboard --
+        try:
+            from src.export import export_report_json
+            json_path = export_report_json(self, metrics, n_trading_days)
+            print(f"Web app data exported to {json_path}")
+        except Exception as e:
+            print(f"\nWARNING: Could not export web app JSON: {e}")
 
         return metrics
 
@@ -1019,6 +1196,15 @@ class BacktestEngine:
         # Risk stub (volatility and correlation are computed per-day, store last)
         risk: dict[str, Any] = {"volatility": {}, "correlation": {}}
 
+        # CAR event study results
+        car_data: dict[str, Any] | None = None
+        if hasattr(self, 'car_summary') and self.car_summary is not None:
+            try:
+                from src.event_study_report import car_summary_to_dict
+                car_data = car_summary_to_dict(self.car_summary)
+            except Exception:
+                pass
+
         return {
             "metadata": {
                 "run_date": _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
@@ -1030,6 +1216,8 @@ class BacktestEngine:
                 "trading_days": n_trading_days,
                 "analyst_count": len(all_analysts),
                 "analysts": analyst_info,
+                "commission_rate": self.commission_rate,
+                "slippage_rate": self.slippage_rate,
             },
             "performance": {
                 "total_return": total_return,
@@ -1041,12 +1229,16 @@ class BacktestEngine:
                 "alpha_vs_spy": self.alpha,
                 "spy_return": self.spy_return,
                 "final_value": round(final_value, 2),
+                "total_transaction_costs": round(
+                    self.portfolio.total_transaction_costs, 2
+                ),
             },
             "equity_curve": equity_curve,
             "trades": trades,
             "signals": self.signal_history,
             "decisions": self.decision_history,
             "risk": risk,
+            "car": car_data,
         }
 
     # ------------------------------------------------------------------
@@ -1103,6 +1295,21 @@ class BacktestEngine:
         print("  " + "-" * 66)
         print(f"  Total trades:      {n_trades}")
         print(f"  Realized P&L:      ${realized_pnl:+,.2f}")
+        txn_costs = self.portfolio.total_transaction_costs
+        total_bps = (self.commission_rate + self.slippage_rate) * 10_000
+        print(f"  Txn costs:         ${txn_costs:,.2f} "
+              f"({total_bps:.0f} bps/trade)")
+        if self.edge_triggered and self._edge_filtered_log:
+            print()
+            print("  EDGE-TRIGGERED FILTER")
+            print("  " + "-" * 66)
+            print(f"  Signals filtered:  {len(self._edge_filtered_log)}")
+            by_ticker: dict[str, int] = {}
+            for entry in self._edge_filtered_log:
+                t = entry["ticker"]
+                by_ticker[t] = by_ticker.get(t, 0) + 1
+            for t, count in sorted(by_ticker.items()):
+                print(f"    {t}: {count} skipped")
         print()
         print("=" * 70)
 

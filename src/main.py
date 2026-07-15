@@ -81,6 +81,34 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Disable the disk-based LLM response cache (forces fresh calls).",
     )
+    parser.add_argument(
+        "--commission",
+        type=float,
+        default=0.001,
+        help=(
+            "Commission rate per trade as a decimal (default: 0.001 = 10 bps). "
+            "Set to 0 for zero-commission backtests."
+        ),
+    )
+    parser.add_argument(
+        "--slippage",
+        type=float,
+        default=0.0005,
+        help=(
+            "Slippage rate per trade as a decimal (default: 0.0005 = 5 bps). "
+            "Set to 0 to disable slippage modeling."
+        ),
+    )
+    parser.add_argument(
+        "--edge-triggered",
+        action="store_true",
+        help=(
+            "Enable edge-triggered signal filtering in backtest mode. "
+            "Prevents overlapping positions: once a position is opened, "
+            "subsequent same-direction signals are skipped until the "
+            "position is closed or the signal reverses."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -126,6 +154,9 @@ def main(argv: list[str] | None = None) -> None:
             initial_cash=args.initial_cash,
             show_reasoning=args.show_reasoning,
             llm_lite=args.llm_lite,
+            commission_rate=args.commission,
+            slippage_rate=args.slippage,
+            edge_triggered=args.edge_triggered,
         )
         engine.run()
         return
@@ -363,28 +394,38 @@ def main(argv: list[str] | None = None) -> None:
     for ticker in active_tickers:
         signals = all_signals.get(ticker, {})
 
+        # Filter out abstained signals -- they don't count toward quorum
+        # or synthesis. An abstained signal means "couldn't analyze",
+        # not "neutral view".
+        active_signals = {
+            name: sig for name, sig in signals.items()
+            if not sig.abstained
+        }
+        abstained_count = len(signals) - len(active_signals)
+
         # Collect non-neutral signals for quorum check
         non_neutral = [
-            (name, sig) for name, sig in signals.items()
+            (name, sig) for name, sig in active_signals.items()
             if sig.signal != "neutral"
         ]
 
         quorum = CRYPTO_QUORUM_THRESHOLD if is_crypto(ticker) else QUORUM_THRESHOLD
         if len(non_neutral) < quorum:
+            abstain_note = f", {abstained_count} abstained" if abstained_count else ""
             decisions[ticker] = {
                 "action": "hold",
                 "quantity": 0,
                 "reasoning": (f"Quorum not met: {len(non_neutral)}/{quorum} "
-                              f"non-neutral signals"),
+                              f"non-neutral signals{abstain_note}"),
                 "weighted_score": 0.0,
             }
             continue
 
-        # Confidence-weighted majority vote
+        # Confidence-weighted majority vote (abstained excluded)
         weighted_sum = 0.0
         confidence_sum = 0.0
 
-        for name, sig in signals.items():
+        for name, sig in active_signals.items():
             direction = 0.0
             if sig.signal == "bullish":
                 direction = 1.0
