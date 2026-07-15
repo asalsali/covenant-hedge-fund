@@ -404,7 +404,7 @@ def _call_openrouter(
         "X-Title": "Covenant Hedge Fund",
     }
 
-    max_retries = 3
+    max_retries = 6
     for attempt in range(max_retries):
         try:
             req = urllib.request.Request(
@@ -413,15 +413,15 @@ def _call_openrouter(
                 headers=headers,
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=90) as resp:
                 body = json.loads(resp.read().decode("utf-8"))
                 content = body["choices"][0]["message"]["content"]
                 return content or _FALLBACK_RESPONSE
 
         except urllib.error.HTTPError as e:
             if e.code == 429:
-                # Rate limited -- back off and retry
-                wait = 2 ** attempt + 1  # 2s, 3s, 5s
+                # Rate limited -- back off with longer delays for free tier
+                wait = min(5 * (2 ** attempt), 60)  # 5s, 10s, 20s, 40s, 60s, 60s
                 print(f"  [LLM] OpenRouter rate limited (429), "
                       f"retrying in {wait}s (attempt {attempt + 1}/{max_retries})",
                       file=sys.stderr)

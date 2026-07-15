@@ -8,6 +8,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 import time
 from datetime import date, timedelta
 from typing import Any
