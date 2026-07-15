@@ -19,12 +19,14 @@ from src.agents.crypto import CRYPTO_ANALYSTS, CRYPTO_LLM_ANALYSTS
 from src.data.api import (
     DataFetchError,
     clear_cache,
+    get_fear_greed,
     get_financial_metrics,
     get_insider_trades,
     get_prices,
     search_line_items,
 )
 from src.data.crypto import cg_get_crypto_metrics, is_crypto, resolve_coin_id
+from src.data.defillama import clear_defillama_cache, get_tvl_for_ticker
 from src.models import AnalystSignal, PerformanceMetrics
 from src.portfolio import Portfolio
 from src.risk import (
@@ -179,6 +181,7 @@ class BacktestEngine:
         """
         # CF-COMP-030: clear cache at start of each run
         clear_cache()
+        clear_defillama_cache()
 
         all_prices: dict[str, list[dict[str, Any]]] = {}
         financial_metrics: dict[str, list[dict[str, Any]]] = {}
@@ -204,6 +207,12 @@ class BacktestEngine:
                         if not hasattr(self, '_crypto_metrics'):
                             self._crypto_metrics: dict[str, dict] = {}
                         self._crypto_metrics[ticker] = crypto_m
+                    # DeFi Llama TVL data (fetched once, doesn't change intra-day)
+                    tvl_data = get_tvl_for_ticker(ticker)
+                    if tvl_data:
+                        if not hasattr(self, '_defi_tvl'):
+                            self._defi_tvl: dict[str, dict] = {}
+                        self._defi_tvl[ticker] = tvl_data
                     print(f"  {ticker}: {len(prices)} price bars loaded (crypto)")
                 else:
                     # Fundamentals fetched once (quarterly/annual, not daily)
@@ -1005,6 +1014,12 @@ class BacktestEngine:
                     # Attach crypto metrics if available
                     if hasattr(self, '_crypto_metrics') and ticker in self._crypto_metrics:
                         md_entry["crypto_metrics"] = self._crypto_metrics[ticker]
+                    # Attach DeFi Llama TVL data if available
+                    if hasattr(self, '_defi_tvl') and ticker in self._defi_tvl:
+                        md_entry["defi_tvl"] = self._defi_tvl[ticker]
+                    # Attach Fear & Greed Index for crypto tickers
+                    if is_crypto(ticker):
+                        md_entry["fear_greed"] = get_fear_greed()
                     market_data[ticker] = md_entry
 
                 analyzable_tickers = [

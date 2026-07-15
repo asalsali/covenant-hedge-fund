@@ -201,6 +201,7 @@ def main(argv: list[str] | None = None) -> None:
     # -------------------------------------------------------------------------
     from src.data.api import DataFetchError
     from src.data.crypto import cg_get_crypto_metrics, is_crypto, resolve_coin_id
+    from src.data.defillama import get_tvl_for_ticker
 
     print("[1/6] Fetching market data...")
 
@@ -233,6 +234,15 @@ def main(argv: list[str] | None = None) -> None:
                     crypto_m = cg_get_crypto_metrics(coin_id)
                     if crypto_m:
                         md_entry["crypto_metrics"] = crypto_m
+                # DeFi Llama TVL data
+                tvl_data = get_tvl_for_ticker(ticker)
+                if tvl_data:
+                    md_entry["defi_tvl"] = tvl_data
+                # Fear & Greed Index (market-wide, cached)
+                from src.data.api import get_fear_greed
+                fg_data = get_fear_greed()
+                if fg_data.get("current_value") is not None:
+                    md_entry["fear_greed"] = fg_data
                 market_data[ticker] = md_entry
                 print(f"  {ticker}: {len(prices)} price bars (crypto)")
             else:

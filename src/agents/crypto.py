@@ -768,12 +768,219 @@ class PlanBAnalyst(BaseAnalyst):
 
 
 # ---------------------------------------------------------------------------
+# 8. DeFiFlowAnalyst (quant, uses_llm=False)
+# ---------------------------------------------------------------------------
+
+class DeFiFlowAnalyst(BaseAnalyst):
+    """DeFi capital flow analyst using DeFi Llama TVL data.
+
+    Tracks total value locked (TVL) trends per chain as a proxy for
+    capital inflows/outflows. Rising TVL = capital entering the
+    ecosystem = bullish for the native token. Pure computation.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="defi_flow",
+            domain="quant",
+            philosophy=(
+                "Analyze DeFi capital flows via TVL trends. "
+                "Rising TVL signals capital entering an ecosystem, "
+                "bullish for the chain's native token. Falling TVL "
+                "signals capital flight, bearish. Evaluate 30-day "
+                "trend magnitude and 7-day acceleration. "
+                "No LLM calls -- pure computation."
+            ),
+            uses_llm=False,
+        )
+
+    def analyze(
+        self,
+        tickers: list[str],
+        market_data: dict[str, Any],
+    ) -> dict[str, AnalystSignal]:
+        return {t: self._run(t, market_data.get(t, {})) for t in tickers}
+
+    def _run(self, ticker: str, data: dict) -> AnalystSignal:
+        tvl = data.get("defi_tvl", {})
+
+        if not tvl or "tvl_change_pct_30d" not in tvl:
+            return AnalystSignal(
+                signal="neutral", confidence=0,
+                reasoning=_pad("No DeFi TVL data available"),
+            )
+
+        sc, avail, reasons = [], 0, []
+        TP = 2  # Two factors: 30d trend + 7d acceleration
+
+        # Factor 1: 30-day TVL change
+        pct_30d = tvl.get("tvl_change_pct_30d", 0)
+        avail += 1
+        if pct_30d > 10:
+            norm = min(1.0, pct_30d / 50.0)
+            sc.append(norm)
+            reasons.append(f"TVL 30d +{pct_30d:.1f}%, capital inflow")
+        elif pct_30d < -10:
+            norm = max(-1.0, pct_30d / 50.0)
+            sc.append(norm)
+            reasons.append(f"TVL 30d {pct_30d:.1f}%, capital flight")
+        else:
+            sc.append(0.0)
+            reasons.append(f"TVL 30d {pct_30d:+.1f}%, stable")
+
+        # Factor 2: 7-day acceleration vs 30-day rate
+        pct_7d = tvl.get("tvl_change_pct_7d")
+        if pct_7d is not None and abs(pct_30d) > 0.01:
+            avail += 1
+            rate_7d = pct_7d / 7.0
+            rate_30d = pct_30d / 30.0
+            if abs(rate_30d) > 0.001:
+                accel = (rate_7d - rate_30d) / max(abs(rate_30d), 0.01)
+                accel_clamped = max(-1.0, min(1.0, accel / 3.0))
+                sc.append(accel_clamped)
+                if accel > 1.5:
+                    reasons.append("TVL accelerating")
+                elif accel < -1.5:
+                    reasons.append("TVL decelerating")
+
+        if not sc:
+            return AnalystSignal(
+                signal="neutral", confidence=5,
+                reasoning=_pad("Insufficient TVL data"),
+            )
+
+        comp = sum(sc) / len(sc)
+        conf = _clamp(abs(comp) * 80 * avail / TP)
+        r = reasons[0] if reasons else "Mixed TVL signals"
+        return AnalystSignal(
+            signal=_signal(comp), confidence=conf,
+            reasoning=_pad(f"{r} ({avail}/{TP} factors)"),
+        )
+
+
+# ---------------------------------------------------------------------------
+# 9. FearGreedAnalyst (quant, uses_llm=False)
+# ---------------------------------------------------------------------------
+
+class FearGreedAnalyst(BaseAnalyst):
+    """Contrarian sentiment analyst using the Crypto Fear & Greed Index.
+
+    Applies Warren Buffett's principle: be fearful when others are greedy,
+    be greedy when others are fearful. The F&G Index is BTC-dominated but
+    reflects overall crypto market sentiment -- applied equally to all
+    crypto tickers.
+
+    Pure computation -- no LLM calls.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="fear_greed",
+            domain="quant",
+            philosophy=(
+                "Contrarian sentiment analysis via the Crypto Fear & Greed "
+                "Index. Buy fear, sell greed. Extreme readings carry higher "
+                "confidence. Trend direction (rising/falling fear) modulates "
+                "the signal strength."
+            ),
+            uses_llm=False,
+        )
+
+    def analyze(
+        self,
+        tickers: list[str],
+        market_data: dict[str, Any],
+    ) -> dict[str, AnalystSignal]:
+        # F&G is market-wide -- compute once, apply to all tickers
+        # Pull from any ticker's market_data (all share the same F&G data)
+        fg_data: dict[str, Any] = {}
+        for t in tickers:
+            fg_data = market_data.get(t, {}).get("fear_greed", {})
+            if fg_data:
+                break
+
+        signal = self._compute_signal(fg_data)
+        return {t: signal for t in tickers}
+
+    @staticmethod
+    def _compute_signal(fg: dict[str, Any]) -> AnalystSignal:
+        value = fg.get("current_value")
+        if value is None:
+            return AnalystSignal(
+                signal="neutral", confidence=0,
+                reasoning=_pad("Fear & Greed data unavailable"),
+            )
+
+        trend = fg.get("trend", "stable")
+        avg_7d = fg.get("avg_7d")
+        avg_30d = fg.get("avg_30d")
+        classification = fg.get("current_classification", "")
+
+        # Contrarian mapping: fear -> bullish, greed -> bearish
+        if value <= 20:
+            # Extreme Fear -> strong buy signal
+            base_signal = "bullish"
+            base_conf = 60 + (20 - value)  # 60-80
+        elif value <= 40:
+            # Fear -> mild buy signal
+            base_signal = "bullish"
+            base_conf = 40 + (40 - value)  # 40-60
+        elif value <= 60:
+            # Neutral zone
+            base_signal = "neutral"
+            base_conf = 20
+        elif value <= 80:
+            # Greed -> mild sell signal
+            base_signal = "bearish"
+            base_conf = 40 + (value - 60)  # 40-60
+        else:
+            # Extreme Greed -> strong sell signal
+            base_signal = "bearish"
+            base_conf = 60 + (value - 80)  # 60-80
+
+        # Trend modulation: rising fear is more bullish, rising greed more bearish
+        trend_adj = 0
+        if trend == "falling" and base_signal == "bullish":
+            # Fear is rising (values falling) -> stronger buy
+            trend_adj = 5
+        elif trend == "falling" and base_signal == "bearish":
+            # Greed is falling -> weaker sell
+            trend_adj = -5
+        elif trend == "rising" and base_signal == "bearish":
+            # Greed is rising (values rising) -> stronger sell
+            trend_adj = 5
+        elif trend == "rising" and base_signal == "bullish":
+            # Fear is falling -> weaker buy
+            trend_adj = -5
+
+        final_conf = _clamp(base_conf + trend_adj)
+
+        # Build reasoning
+        trend_note = ""
+        if avg_7d is not None and avg_30d is not None:
+            trend_note = f", 7d avg {avg_7d:.0f} vs 30d avg {avg_30d:.0f}"
+
+        reasoning = (
+            f"F&G={value} ({classification}){trend_note}, "
+            f"trend {trend} -> contrarian {base_signal}"
+        )
+
+        return AnalystSignal(
+            signal=base_signal,
+            confidence=final_conf,
+            reasoning=_pad(reasoning),
+        )
+
+
+# ---------------------------------------------------------------------------
 # Exports
 # ---------------------------------------------------------------------------
 
 CRYPTO_ANALYSTS: list[type[BaseAnalyst]] = [
     OnChainAnalyst,
     MomentumCryptoAnalyst,
+    DeFiFlowAnalyst,
+    FearGreedAnalyst,
 ]
 
 CRYPTO_LLM_ANALYSTS: list[type[BaseAnalyst]] = [

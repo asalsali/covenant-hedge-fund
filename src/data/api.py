@@ -581,6 +581,92 @@ def get_company_news(
     return result
 
 
+# ---------------------------------------------------------------------------
+# Fear & Greed Index (alternative.me — free, no API key)
+# ---------------------------------------------------------------------------
+
+_fear_greed_cache: dict[str, Any] | None = None
+
+
+def get_fear_greed(limit: int = 30) -> dict[str, Any]:
+    """Fetch the Crypto Fear & Greed Index from alternative.me.
+
+    Returns a dict with:
+        current_value: int 0-100
+        current_classification: str (e.g. "Extreme Fear")
+        avg_7d: float — 7-day rolling average
+        avg_30d: float — 30-day rolling average
+        trend: "rising" | "falling" | "stable" (7d vs 30d avg)
+        history: list of {value, classification, timestamp} dicts
+
+    Cached for the session (index updates once daily).
+    """
+    global _fear_greed_cache
+    if _fear_greed_cache is not None:
+        return _fear_greed_cache
+
+    url = f"https://api.alternative.me/fng/?limit={limit}&date_format=us"
+    try:
+        response = httpx.get(url, timeout=15)
+        response.raise_for_status()
+        raw = response.json()
+    except Exception:
+        _fear_greed_cache = {
+            "current_value": None,
+            "current_classification": None,
+            "avg_7d": None,
+            "avg_30d": None,
+            "trend": None,
+            "history": [],
+        }
+        return _fear_greed_cache
+
+    entries = raw.get("data", [])
+    if not entries:
+        _fear_greed_cache = {
+            "current_value": None,
+            "current_classification": None,
+            "avg_7d": None,
+            "avg_30d": None,
+            "trend": None,
+            "history": [],
+        }
+        return _fear_greed_cache
+
+    values = [int(e["value"]) for e in entries]
+    current_value = values[0]
+    current_classification = entries[0].get("value_classification", "")
+
+    avg_7d = sum(values[:7]) / min(len(values), 7)
+    avg_30d = sum(values[:30]) / min(len(values), 30)
+
+    if avg_7d > avg_30d + 5:
+        trend = "rising"
+    elif avg_7d < avg_30d - 5:
+        trend = "falling"
+    else:
+        trend = "stable"
+
+    history = [
+        {
+            "value": int(e["value"]),
+            "classification": e.get("value_classification", ""),
+            "timestamp": e.get("timestamp", ""),
+        }
+        for e in entries
+    ]
+
+    _fear_greed_cache = {
+        "current_value": current_value,
+        "current_classification": current_classification,
+        "avg_7d": round(avg_7d, 1),
+        "avg_30d": round(avg_30d, 1),
+        "trend": trend,
+        "history": history,
+    }
+    return _fear_greed_cache
+
+
 def get_market_cap(
     ticker: str,
     end_date: date,
