@@ -71,6 +71,7 @@ class OnChainAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
         return {t: self._run(t, market_data.get(t, {})) for t in tickers}
 
@@ -179,6 +180,7 @@ class MomentumCryptoAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
         return {t: self._run(t, market_data.get(t, {})) for t in tickers}
 
@@ -368,9 +370,9 @@ class CryptoMacroAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
         _my_skills = get_skills_for_analyst(self.name, _ALL_SKILLS)
-        system_prompt = self.philosophy + format_skills_prompt(_my_skills) + LLM_INSTRUCTION_SUFFIX
         results: dict[str, AnalystSignal] = {}
 
         for ticker in tickers:
@@ -385,6 +387,17 @@ class CryptoMacroAnalyst(BaseAnalyst):
                     reasoning=_pad("No crypto data available"),
                 )
                 continue
+
+            evidence_block = ""
+            if quant_evidence and ticker in quant_evidence:
+                evidence_block = "\n\n" + quant_evidence[ticker] + "\n"
+
+            system_prompt = (
+                self.philosophy
+                + evidence_block
+                + format_skills_prompt(_my_skills)
+                + LLM_INSTRUCTION_SUFFIX
+            )
 
             user_prompt = (
                 f"Analyze {ticker} as a digital asset. "
@@ -482,9 +495,9 @@ class TokenomicsAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
         _my_skills = get_skills_for_analyst(self.name, _ALL_SKILLS)
-        system_prompt = self.philosophy + format_skills_prompt(_my_skills) + LLM_INSTRUCTION_SUFFIX
         results: dict[str, AnalystSignal] = {}
 
         for ticker in tickers:
@@ -499,6 +512,17 @@ class TokenomicsAnalyst(BaseAnalyst):
                     reasoning=_pad("No tokenomics data available"),
                 )
                 continue
+
+            evidence_block = ""
+            if quant_evidence and ticker in quant_evidence:
+                evidence_block = "\n\n" + quant_evidence[ticker] + "\n"
+
+            system_prompt = (
+                self.philosophy
+                + evidence_block
+                + format_skills_prompt(_my_skills)
+                + LLM_INSTRUCTION_SUFFIX
+            )
 
             user_prompt = (
                 f"Evaluate {ticker}'s tokenomics. "
@@ -562,9 +586,9 @@ class KwokAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
         _my_skills = get_skills_for_analyst(self.name, _ALL_SKILLS)
-        system_prompt = self.philosophy + format_skills_prompt(_my_skills) + LLM_INSTRUCTION_SUFFIX
         results: dict[str, AnalystSignal] = {}
 
         for ticker in tickers:
@@ -579,6 +603,17 @@ class KwokAnalyst(BaseAnalyst):
                     reasoning=_pad("No crypto data available"),
                 )
                 continue
+
+            evidence_block = ""
+            if quant_evidence and ticker in quant_evidence:
+                evidence_block = "\n\n" + quant_evidence[ticker] + "\n"
+
+            system_prompt = (
+                self.philosophy
+                + evidence_block
+                + format_skills_prompt(_my_skills)
+                + LLM_INSTRUCTION_SUFFIX
+            )
 
             user_prompt = (
                 f"Evaluate {ticker} from an institutional adoption perspective. "
@@ -644,9 +679,9 @@ class WooAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
         _my_skills = get_skills_for_analyst(self.name, _ALL_SKILLS)
-        system_prompt = self.philosophy + format_skills_prompt(_my_skills) + LLM_INSTRUCTION_SUFFIX
         results: dict[str, AnalystSignal] = {}
 
         for ticker in tickers:
@@ -661,6 +696,17 @@ class WooAnalyst(BaseAnalyst):
                     reasoning=_pad("No crypto data available"),
                 )
                 continue
+
+            evidence_block = ""
+            if quant_evidence and ticker in quant_evidence:
+                evidence_block = "\n\n" + quant_evidence[ticker] + "\n"
+
+            system_prompt = (
+                self.philosophy
+                + evidence_block
+                + format_skills_prompt(_my_skills)
+                + LLM_INSTRUCTION_SUFFIX
+            )
 
             user_prompt = (
                 f"Analyze {ticker}'s on-chain health and cycle positioning. "
@@ -727,9 +773,9 @@ class PlanBAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
         _my_skills = get_skills_for_analyst(self.name, _ALL_SKILLS)
-        system_prompt = self.philosophy + format_skills_prompt(_my_skills) + LLM_INSTRUCTION_SUFFIX
         results: dict[str, AnalystSignal] = {}
 
         for ticker in tickers:
@@ -744,6 +790,17 @@ class PlanBAnalyst(BaseAnalyst):
                     reasoning=_pad("No scarcity data available"),
                 )
                 continue
+
+            evidence_block = ""
+            if quant_evidence and ticker in quant_evidence:
+                evidence_block = "\n\n" + quant_evidence[ticker] + "\n"
+
+            system_prompt = (
+                self.philosophy
+                + evidence_block
+                + format_skills_prompt(_my_skills)
+                + LLM_INSTRUCTION_SUFFIX
+            )
 
             user_prompt = (
                 f"Evaluate {ticker}'s scarcity profile and cycle positioning. "
@@ -798,6 +855,7 @@ class DeFiFlowAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
         return {t: self._run(t, market_data.get(t, {})) for t in tickers}
 
@@ -890,6 +948,7 @@ class FearGreedAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
         # F&G is market-wide -- compute once, apply to all tickers
         # Pull from any ticker's market_data (all share the same F&G data)

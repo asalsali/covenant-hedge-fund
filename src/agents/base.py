@@ -42,6 +42,7 @@ class BaseAnalyst(ABC):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
         """Analyze tickers and return signals.
 
@@ -49,6 +50,9 @@ class BaseAnalyst(ABC):
             tickers: List of ticker symbols to analyze.
             market_data: Pre-fetched market data relevant to this
                 analyst's needs. Structure varies by analyst type.
+            quant_evidence: Optional dict mapping ticker -> formatted
+                evidence brief string from quant analysts. LLM analysts
+                inject this into their prompts. Quant analysts ignore it.
 
         Returns:
             Dict mapping ticker symbol to AnalystSignal.

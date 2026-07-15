@@ -26,6 +26,7 @@ def _run_single_analyst(
     analyst: BaseAnalyst,
     tickers: list[str],
     market_data: dict[str, Any],
+    quant_evidence: dict[str, str] | None = None,
 ) -> tuple[str, dict[str, AnalystSignal]]:
     """Execute a single analyst and return (name, results).
 
@@ -34,7 +35,7 @@ def _run_single_analyst(
     existing graceful degradation behavior.
     """
     try:
-        results = analyst.analyze(tickers, market_data)
+        results = analyst.analyze(tickers, market_data, quant_evidence=quant_evidence)
         return analyst.name, results
     except Exception as e:
         # Graceful degradation: return neutral/0 for all tickers
@@ -55,6 +56,7 @@ def run_analysts_parallel(
     *,
     max_workers: int | None = None,
     verbose: bool = True,
+    quant_evidence: dict[str, str] | None = None,
 ) -> tuple[dict[str, dict[str, AnalystSignal]], float]:
     """Run analysts concurrently and collect signals.
 
@@ -64,6 +66,8 @@ def run_analysts_parallel(
         market_data: Pre-fetched market data (NOT parallelized).
         max_workers: Thread pool size. Defaults to min(len(analysts), MAX_WORKERS).
         verbose: Print per-analyst completion messages.
+        quant_evidence: Optional dict mapping ticker -> formatted evidence
+            brief string. Passed through to LLM analysts.
 
     Returns:
         Tuple of (all_signals dict, elapsed_seconds).
@@ -76,7 +80,7 @@ def run_analysts_parallel(
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
-            pool.submit(_run_single_analyst, analyst, tickers, market_data): analyst
+            pool.submit(_run_single_analyst, analyst, tickers, market_data, quant_evidence): analyst
             for analyst in analysts
         }
 
@@ -107,6 +111,7 @@ def run_analysts_sequential(
     market_data: dict[str, Any],
     *,
     verbose: bool = True,
+    quant_evidence: dict[str, str] | None = None,
 ) -> tuple[dict[str, dict[str, AnalystSignal]], float]:
     """Run analysts sequentially (original behavior, used as fallback).
 
@@ -120,7 +125,7 @@ def run_analysts_sequential(
         if verbose:
             print(f"  Running {analyst.name}...", end=" ", flush=True)
 
-        name, results = _run_single_analyst(analyst, tickers, market_data)
+        name, results = _run_single_analyst(analyst, tickers, market_data, quant_evidence)
 
         for ticker, signal in results.items():
             if ticker not in all_signals:

@@ -158,6 +158,7 @@ def _run_llm_analyst(
     tickers: list[str],
     market_data: dict[str, Any],
     fact_extractor: Any = None,
+    quant_evidence: dict[str, str] | None = None,
 ) -> dict[str, AnalystSignal]:
     """Shared LLM analyst execution pattern.
 
@@ -165,11 +166,19 @@ def _run_llm_analyst(
       1. Data layer errors -> DataFetchError (already raised upstream)
       2. LLM call failure -> abstain signal (confidence=0, abstained=True)
       3. LLM parse failure -> abstain signal + raw response persisted
+
+    Args:
+        analyst: The analyst instance to run.
+        tickers: Ticker symbols to analyze.
+        market_data: Pre-fetched market data.
+        fact_extractor: Optional custom fact extractor function.
+        quant_evidence: Optional dict mapping ticker -> formatted evidence
+            brief string. When provided, injected into the system prompt
+            so the LLM can consider quant signals as evidence.
     """
     extractor = fact_extractor or _extract_value_facts
     matched_skills = get_skills_for_analyst(analyst.name, _ALL_SKILLS)
     skills_appendix = format_skills_prompt(matched_skills)
-    system_prompt = analyst.philosophy + skills_appendix + LLM_INSTRUCTION_SUFFIX
     results: dict[str, AnalystSignal] = {}
 
     for ticker in tickers:
@@ -192,6 +201,18 @@ def _run_llm_analyst(
                 reasoning=_pad("No financial data available"),
             )
             continue
+
+        # Build system prompt with optional evidence injection
+        evidence_block = ""
+        if quant_evidence and ticker in quant_evidence:
+            evidence_block = "\n\n" + quant_evidence[ticker] + "\n"
+
+        system_prompt = (
+            analyst.philosophy
+            + evidence_block
+            + skills_appendix
+            + LLM_INSTRUCTION_SUFFIX
+        )
 
         user_prompt = f"Analyze {ticker}. All ratios are pre-computed -- use them directly, do not recalculate.\n\n{rendered}"
         response = call_llm(system_prompt, user_prompt)
@@ -244,8 +265,9 @@ class BuffettAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
-        return _run_llm_analyst(self, tickers, market_data)
+        return _run_llm_analyst(self, tickers, market_data, quant_evidence=quant_evidence)
 
 
 class GrahamAnalyst(BaseAnalyst):
@@ -278,8 +300,9 @@ class GrahamAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
-        return _run_llm_analyst(self, tickers, market_data)
+        return _run_llm_analyst(self, tickers, market_data, quant_evidence=quant_evidence)
 
 
 class MungerAnalyst(BaseAnalyst):
@@ -313,8 +336,9 @@ class MungerAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
-        return _run_llm_analyst(self, tickers, market_data)
+        return _run_llm_analyst(self, tickers, market_data, quant_evidence=quant_evidence)
 
 
 class PabraiAnalyst(BaseAnalyst):
@@ -347,8 +371,9 @@ class PabraiAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
-        return _run_llm_analyst(self, tickers, market_data)
+        return _run_llm_analyst(self, tickers, market_data, quant_evidence=quant_evidence)
 
 
 class FisherAnalyst(BaseAnalyst):
@@ -382,8 +407,9 @@ class FisherAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
-        return _run_llm_analyst(self, tickers, market_data)
+        return _run_llm_analyst(self, tickers, market_data, quant_evidence=quant_evidence)
 
 
 class DamodaranAnalyst(BaseAnalyst):
@@ -418,8 +444,9 @@ class DamodaranAnalyst(BaseAnalyst):
         self,
         tickers: list[str],
         market_data: dict[str, Any],
+        quant_evidence: dict[str, str] | None = None,
     ) -> dict[str, AnalystSignal]:
-        return _run_llm_analyst(self, tickers, market_data)
+        return _run_llm_analyst(self, tickers, market_data, quant_evidence=quant_evidence)
 
 
 VALUE_ANALYSTS: list[type[BaseAnalyst]] = [

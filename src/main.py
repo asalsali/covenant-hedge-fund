@@ -282,42 +282,82 @@ def main(argv: list[str] | None = None) -> None:
     print()
 
     # -------------------------------------------------------------------------
-    # 3. Run all analysts (parallel by default, --sequential for fallback)
+    # 3. Run analysts: LLM-first pipeline (quant -> evidence -> LLM -> quorum)
     # -------------------------------------------------------------------------
     from src.agents.quant import QUANT_ANALYSTS
     from src.agents.value import VALUE_ANALYSTS
     from src.agents.macro import MACRO_ANALYSTS
     from src.agents.crypto import CRYPTO_ANALYSTS, CRYPTO_LLM_ANALYSTS
     from src.agents.parallel import run_analysts_parallel, run_analysts_sequential
+    from src.evidence import format_evidence_brief
 
     has_crypto = any(is_crypto(t) for t in active_tickers)
 
-    all_analysts = (
-        [Cls() for Cls in QUANT_ANALYSTS]
-        + [Cls() for Cls in VALUE_ANALYSTS]
+    quant_analysts = [Cls() for Cls in QUANT_ANALYSTS]
+    if has_crypto:
+        quant_analysts.extend(Cls() for Cls in CRYPTO_ANALYSTS)
+
+    llm_analysts = (
+        [Cls() for Cls in VALUE_ANALYSTS]
         + [Cls() for Cls in MACRO_ANALYSTS]
     )
-
-    # Add crypto-specialized analysts when any ticker is crypto
     if has_crypto:
-        all_analysts.extend(Cls() for Cls in CRYPTO_ANALYSTS)
-        all_analysts.extend(Cls() for Cls in CRYPTO_LLM_ANALYSTS)
+        llm_analysts.extend(Cls() for Cls in CRYPTO_LLM_ANALYSTS)
 
+    all_analysts = quant_analysts + llm_analysts
     analyst_names = [a.name for a in all_analysts]
 
     run_fn = run_analysts_sequential if args.sequential else run_analysts_parallel
     mode_label = "sequential" if args.sequential else "parallel"
 
-    print(f"[2/6] Running {len(all_analysts)} analysts ({mode_label})...")
-    print(f"  Quant:  {', '.join(a.name for a in all_analysts if a.domain == 'quant')}")
-    print(f"  Value:  {', '.join(a.name for a in all_analysts if a.domain == 'value')}")
-    print(f"  Macro:  {', '.join(a.name for a in all_analysts if a.domain == 'macro')}")
+    # Step 1: Run quant analysts first
+    print(f"[2/6] Running {len(quant_analysts)} quant analysts ({mode_label})...")
+    print(f"  Quant:  {', '.join(a.name for a in quant_analysts)}")
 
-    all_signals: dict[str, dict[str, Any]]
-    all_signals, analyst_elapsed = run_fn(
-        all_analysts, active_tickers, market_data, verbose=True,
+    quant_signals: dict[str, dict[str, Any]]
+    quant_signals, quant_elapsed = run_fn(
+        quant_analysts, active_tickers, market_data, verbose=True,
     )
+    print(f"  Quant analysts complete in {quant_elapsed:.1f}s")
 
+    # Step 2: Build evidence briefs per ticker from quant signals
+    evidence_briefs: dict[str, str] = {}
+    for ticker in active_tickers:
+        ticker_quant = quant_signals.get(ticker, {})
+        if ticker_quant:
+            evidence_briefs[ticker] = format_evidence_brief(ticker, ticker_quant)
+
+    # Step 3: Run LLM analysts with evidence (or skip if Ollama unavailable)
+    ollama_available = _check_ollama()
+    all_signals: dict[str, dict[str, Any]] = {}
+    llm_elapsed = 0.0
+
+    if ollama_available and llm_analysts:
+        print(f"\n  Running {len(llm_analysts)} LLM analysts with quant evidence ({mode_label})...")
+        print(f"  Value:  {', '.join(a.name for a in llm_analysts if a.domain == 'value')}")
+        print(f"  Macro:  {', '.join(a.name for a in llm_analysts if a.domain == 'macro')}")
+
+        llm_signals, llm_elapsed = run_fn(
+            llm_analysts, active_tickers, market_data,
+            verbose=True, quant_evidence=evidence_briefs,
+        )
+        print(f"  LLM analysts complete in {llm_elapsed:.1f}s")
+
+        # LLM-first: quorum uses LLM signals only
+        all_signals = llm_signals
+        # But keep quant signals for the report
+        for ticker in active_tickers:
+            for name, sig in quant_signals.get(ticker, {}).items():
+                if ticker not in all_signals:
+                    all_signals[ticker] = {}
+                all_signals[ticker][name] = sig
+    else:
+        # Fallback: quant-only mode (Ollama not running)
+        if not ollama_available:
+            print("\n  Ollama unavailable -- falling back to quant-only mode")
+        all_signals = quant_signals
+
+    analyst_elapsed = quant_elapsed + llm_elapsed
     print()
     print(f"  All analysts complete in {analyst_elapsed:.1f}s ({mode_label})")
     print(f"  Signals collected for {len(all_signals)} tickers")
@@ -399,19 +439,34 @@ def main(argv: list[str] | None = None) -> None:
     CRYPTO_QUORUM_THRESHOLD = 2  # Crypto quant-only: 3 analysts, 67% floor
     SCORE_THRESHOLD = 0.3  # Normalized score threshold for action
 
+    # Determine which analyst names are LLM vs quant for quorum filtering
+    llm_analyst_names = {a.name for a in llm_analysts} if ollama_available else set()
+    quant_analyst_names = {a.name for a in quant_analysts}
+
     decisions: dict[str, dict[str, Any]] = {}
 
     for ticker in active_tickers:
         signals = all_signals.get(ticker, {})
 
+        # LLM-first: when LLMs are available, only LLM signals vote in quorum.
+        # Quant signals are consumed as evidence in LLM prompts, not counted.
+        # Fallback: when no LLMs, all signals (quant-only) vote.
+        if llm_analyst_names:
+            voting_signals = {
+                name: sig for name, sig in signals.items()
+                if name in llm_analyst_names
+            }
+        else:
+            voting_signals = dict(signals)
+
         # Filter out abstained signals -- they don't count toward quorum
         # or synthesis. An abstained signal means "couldn't analyze",
         # not "neutral view".
         active_signals = {
-            name: sig for name, sig in signals.items()
+            name: sig for name, sig in voting_signals.items()
             if not sig.abstained
         }
-        abstained_count = len(signals) - len(active_signals)
+        abstained_count = len(voting_signals) - len(active_signals)
 
         # Collect non-neutral signals for quorum check
         non_neutral = [

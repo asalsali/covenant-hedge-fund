@@ -77,7 +77,7 @@ class TechnicalsAnalyst(BaseAnalyst):
             ),
             uses_llm=False)
 
-    def analyze(self, tickers: list[str], market_data: dict[str, Any]) -> dict[str, AnalystSignal]:
+    def analyze(self, tickers: list[str], market_data: dict[str, Any], quant_evidence: dict[str, str] | None = None) -> dict[str, AnalystSignal]:
         """Compute technical signals for each ticker."""
         return {t: self._run(t, market_data.get(t, {})) for t in tickers}
 
@@ -166,7 +166,7 @@ class FundamentalsAnalyst(BaseAnalyst):
             ),
             uses_llm=False)
 
-    def analyze(self, tickers: list[str], market_data: dict[str, Any]) -> dict[str, AnalystSignal]:
+    def analyze(self, tickers: list[str], market_data: dict[str, Any], quant_evidence: dict[str, str] | None = None) -> dict[str, AnalystSignal]:
         """Compute fundamental scores for each ticker."""
         return {t: self._run(t, market_data.get(t, {})) for t in tickers}
 
@@ -321,7 +321,7 @@ class ValuationAnalyst(BaseAnalyst):
             ),
             uses_llm=False)
 
-    def analyze(self, tickers: list[str], market_data: dict[str, Any]) -> dict[str, AnalystSignal]:
+    def analyze(self, tickers: list[str], market_data: dict[str, Any], quant_evidence: dict[str, str] | None = None) -> dict[str, AnalystSignal]:
         """Compute valuation signals for each ticker."""
         return {t: self._run(t, market_data.get(t, {})) for t in tickers}
 
@@ -461,7 +461,7 @@ class GrowthAnalyst(BaseAnalyst):
             ),
             uses_llm=False)
 
-    def analyze(self, tickers: list[str], market_data: dict[str, Any]) -> dict[str, AnalystSignal]:
+    def analyze(self, tickers: list[str], market_data: dict[str, Any], quant_evidence: dict[str, str] | None = None) -> dict[str, AnalystSignal]:
         """Compute growth signals for each ticker."""
         return {t: self._run(t, market_data.get(t, {})) for t in tickers}
 
@@ -557,7 +557,7 @@ class SentimentAnalyst(BaseAnalyst):
             ),
             uses_llm=False)
 
-    def analyze(self, tickers: list[str], market_data: dict[str, Any]) -> dict[str, AnalystSignal]:
+    def analyze(self, tickers: list[str], market_data: dict[str, Any], quant_evidence: dict[str, str] | None = None) -> dict[str, AnalystSignal]:
         """Compute sentiment signals for each ticker."""
         return {t: self._run(t, market_data.get(t, {})) for t in tickers}
 

@@ -594,16 +594,20 @@ class BacktestEngine:
         current_prices: dict[str, float],
         current_date: str,
     ) -> None:
-        """Run quant + LLM analysts together using the parallel runner.
+        """Run LLM-first pipeline: quant -> evidence -> LLM -> quorum.
 
-        On LLM rebalance days, we run all quant analysts plus the selected
-        LLM personas in parallel. The combined signals feed into the same
-        quorum/scoring pipeline as quant-only days.
+        On LLM rebalance days:
+        1. Run quant analysts first to produce evidence
+        2. Format evidence briefs per ticker
+        3. Pass evidence into LLM analyst prompts
+        4. Quorum based on LLM signals only (quant = evidence, not votes)
 
-        Also logs the quant-only vs combined signal comparison for the
+        Also logs the quant-only vs LLM-only signal comparison for the
         final diversity report.
         """
-        # Run quant analysts first (fast, no API calls)
+        from src.evidence import format_evidence_brief
+
+        # Step 1: Run quant analysts (fast, no API calls)
         quant_signals: dict[str, dict[str, AnalystSignal]] = {}
         for analyst in self.analysts:
             results = analyst.analyze(active_tickers, market_data)
@@ -612,24 +616,30 @@ class BacktestEngine:
                     quant_signals[ticker] = {}
                 quant_signals[ticker][analyst.name] = signal
 
-        # Run LLM analysts in parallel
+        # Step 2: Build evidence briefs per ticker
+        evidence_briefs: dict[str, str] = {}
+        for ticker in active_tickers:
+            ticker_quant = quant_signals.get(ticker, {})
+            if ticker_quant:
+                evidence_briefs[ticker] = format_evidence_brief(ticker, ticker_quant)
+
+        # Step 3: Run LLM analysts with evidence injected into prompts
         llm_signals, llm_elapsed = run_analysts_parallel(
             self.llm_analysts,
             active_tickers,
             market_data,
             verbose=True,
+            quant_evidence=evidence_briefs,
         )
 
         print(f"    LLM analysts completed in {llm_elapsed:.1f}s")
 
-        # Merge: quant + LLM
+        # Merge all signals for reporting (quant + LLM)
         all_signals: dict[str, dict[str, AnalystSignal]] = {}
         for ticker in active_tickers:
             all_signals[ticker] = {}
-            # Add quant signals
             for name, sig in quant_signals.get(ticker, {}).items():
                 all_signals[ticker][name] = sig
-            # Add LLM signals
             for name, sig in llm_signals.get(ticker, {}).items():
                 all_signals[ticker][name] = sig
 
@@ -643,11 +653,12 @@ class BacktestEngine:
             }
 
         # --- Log signal comparison for diversity report ---
+        llm_analyst_names = {a.name for a in self.llm_analysts}
         for ticker in active_tickers:
             quant_only = quant_signals.get(ticker, {})
             llm_only = llm_signals.get(ticker, {})
 
-            # Compute quant-only score
+            # Compute quant-only score (for comparison)
             q_weighted_sum = 0.0
             q_conf_sum = 0.0
             for sig in quant_only.values():
@@ -657,22 +668,23 @@ class BacktestEngine:
                 q_conf_sum += conf
             q_score = q_weighted_sum / q_conf_sum if q_conf_sum > 0 else 0.0
 
-            # Compute combined score
-            c_weighted_sum = q_weighted_sum
-            c_conf_sum = q_conf_sum
+            # Compute LLM-only score (this is what drives decisions now)
+            l_weighted_sum = 0.0
+            l_conf_sum = 0.0
             for sig in llm_only.values():
-                direction = {"bullish": 1.0, "bearish": -1.0}.get(sig.signal, 0.0)
-                conf = sig.confidence / 100.0
-                c_weighted_sum += conf * direction
-                c_conf_sum += conf
-            c_score = c_weighted_sum / c_conf_sum if c_conf_sum > 0 else 0.0
+                if not sig.abstained:
+                    direction = {"bullish": 1.0, "bearish": -1.0}.get(sig.signal, 0.0)
+                    conf = sig.confidence / 100.0
+                    l_weighted_sum += conf * direction
+                    l_conf_sum += conf
+            l_score = l_weighted_sum / l_conf_sum if l_conf_sum > 0 else 0.0
 
             self.llm_signal_log.append({
                 "date": current_date,
                 "ticker": ticker,
                 "quant_score": round(q_score, 4),
-                "combined_score": round(c_score, 4),
-                "score_delta": round(c_score - q_score, 4),
+                "combined_score": round(l_score, 4),
+                "score_delta": round(l_score - q_score, 4),
                 "quant_signals": {
                     n: {"signal": s.signal, "confidence": s.confidence}
                     for n, s in quant_only.items()
@@ -703,7 +715,6 @@ class BacktestEngine:
             limit = compute_position_limit(
                 ticker, portfolio_value, vol_metrics[ticker], corr_metrics,
             )
-            # Apply correlation-based exposure cap
             cap_mult = corr_caps.get(ticker, 1.0)
             if cap_mult < 1.0:
                 limit.final_pct = round(limit.final_pct * cap_mult, 4)
@@ -715,16 +726,17 @@ class BacktestEngine:
             )
             allowed_actions[ticker] = allowed
 
-        # --- Quorum + confidence-weighted synthesis (same logic) ---
+        # --- LLM-first quorum: only LLM signals vote ---
         decisions: dict[str, dict[str, Any]] = {}
 
         for ticker in active_tickers:
-            signals = all_signals.get(ticker, {})
+            # Only LLM signals participate in quorum
+            voting_signals = {
+                name: sig for name, sig in llm_signals.get(ticker, {}).items()
+            }
 
-            # Filter out abstained signals -- they don't count toward
-            # quorum or synthesis (abstain = "couldn't analyze", not "no view")
             active_signals = {
-                name: sig for name, sig in signals.items()
+                name: sig for name, sig in voting_signals.items()
                 if not sig.abstained
             }
 
@@ -735,7 +747,7 @@ class BacktestEngine:
 
             quorum = CRYPTO_QUORUM_THRESHOLD if is_crypto(ticker) else QUORUM_THRESHOLD
             if len(non_neutral) < quorum:
-                abstained_count = len(signals) - len(active_signals)
+                abstained_count = len(voting_signals) - len(active_signals)
                 abstain_note = f", {abstained_count} abstained" if abstained_count else ""
                 decisions[ticker] = {
                     "action": "hold", "quantity": 0,
