@@ -76,10 +76,19 @@ class OnChainAnalyst(BaseAnalyst):
 
     def _run(self, ticker: str, data: dict) -> AnalystSignal:
         cm = data.get("crypto_metrics", {})
+        prices = data.get("prices", [])
+
+        # Derive 30d momentum from prices when CoinGecko is unavailable
+        if not cm and len(prices) >= 30:
+            closes = [p["close"] for p in prices if p.get("close") is not None]
+            if len(closes) >= 30 and closes[-30] > 0:
+                pct_30d = (closes[-1] - closes[-30]) / closes[-30] * 100
+                cm = {"price_change_percentage_30d": pct_30d}
+
         if not cm:
             return AnalystSignal(
                 signal="neutral", confidence=0,
-                reasoning=_pad("No crypto metrics available"),
+                reasoning=_pad("No crypto metrics or price data available"),
             )
 
         sc, avail, reasons = [], 0, []
@@ -174,11 +183,20 @@ class MomentumCryptoAnalyst(BaseAnalyst):
         return {t: self._run(t, market_data.get(t, {})) for t in tickers}
 
     def _run(self, ticker: str, data: dict) -> AnalystSignal:
+        # Try CoinGecko metrics first, fall back to price-derived momentum
         cm = data.get("crypto_metrics", {})
+        prices = data.get("prices", [])
+
+        # Derive momentum from price history when CoinGecko is unavailable
+        if not cm and len(prices) >= 30:
+            closes = [p["close"] for p in prices if p.get("close") is not None]
+            if len(closes) >= 30:
+                cm = self._derive_momentum_from_prices(closes)
+
         if not cm:
             return AnalystSignal(
                 signal="neutral", confidence=0,
-                reasoning=_pad("No crypto metrics available"),
+                reasoning=_pad("No crypto metrics or price data available"),
             )
 
         sc, avail, reasons = [], 0, []
@@ -252,6 +270,32 @@ class MomentumCryptoAnalyst(BaseAnalyst):
             signal=_signal(comp), confidence=conf,
             reasoning=_pad(f"{r} ({avail}/{TP} factors)"),
         )
+
+    @staticmethod
+    def _derive_momentum_from_prices(closes: list[float]) -> dict:
+        """Derive CoinGecko-compatible momentum metrics from price history."""
+        current = closes[-1]
+        metrics: dict[str, float] = {}
+
+        if len(closes) >= 7 and closes[-7] > 0:
+            metrics["price_change_percentage_7d"] = (
+                (current - closes[-7]) / closes[-7] * 100
+            )
+        if len(closes) >= 30 and closes[-30] > 0:
+            metrics["price_change_percentage_30d"] = (
+                (current - closes[-30]) / closes[-30] * 100
+            )
+        if len(closes) >= 200 and closes[-200] > 0:
+            metrics["price_change_percentage_200d"] = (
+                (current - closes[-200]) / closes[-200] * 100
+            )
+
+        # Approximate ATH from available data
+        ath = max(closes)
+        if ath > 0:
+            metrics["ath_change_percentage"] = (current - ath) / ath * 100
+
+        return metrics
 
 
 # ---------------------------------------------------------------------------
