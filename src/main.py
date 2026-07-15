@@ -77,6 +77,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--openrouter-model",
+        type=str,
+        default=None,
+        help=(
+            "OpenRouter model to use (e.g., meta-llama/llama-3.3-70b-instruct:free). "
+            "Overrides OPENROUTER_MODEL env var. "
+            "Requires OPENROUTER_API_KEY to be set. "
+            "Default: meta-llama/llama-3.3-70b-instruct:free"
+        ),
+    )
+    parser.add_argument(
         "--no-cache",
         action="store_true",
         help="Disable the disk-based LLM response cache (forces fresh calls).",
@@ -135,6 +146,11 @@ def main(argv: list[str] | None = None) -> None:
         from src.llm import set_model
         set_model(args.model)
 
+    # Apply --openrouter-model override
+    if args.openrouter_model:
+        from src.llm import set_openrouter_model
+        set_openrouter_model(args.openrouter_model)
+
     # Apply --no-cache flag
     if args.no_cache:
         from src.llm import set_cache_enabled
@@ -179,11 +195,13 @@ def main(argv: list[str] | None = None) -> None:
     print(f"  Date range: {start_date} to {end_date}")
     print(f"  Cash:       ${args.initial_cash:,.2f}")
 
-    from src.llm import get_active_model, _check_ollama
-    if _check_ollama():
-        print(f"  LLM model:  {get_active_model()}")
+    from src.llm import get_active_model, get_active_backend
+    backend = get_active_backend()
+    if backend != "none":
+        print(f"  LLM backend: {backend}")
+        print(f"  LLM model:   {get_active_model()}")
     else:
-        print("  LLM model:  (none -- quant-only mode)")
+        print("  LLM backend: (none -- quant-only mode)")
     print()
 
     # CF-COMP-030: clear data cache at start of each run
@@ -328,11 +346,11 @@ def main(argv: list[str] | None = None) -> None:
             evidence_briefs[ticker] = format_evidence_brief(ticker, ticker_quant)
 
     # Step 3: Run LLM analysts with evidence (or skip if Ollama unavailable)
-    ollama_available = _check_ollama()
+    llm_available = backend != "none"
     all_signals: dict[str, dict[str, Any]] = {}
     llm_elapsed = 0.0
 
-    if ollama_available and llm_analysts:
+    if llm_available and llm_analysts:
         print(f"\n  Running {len(llm_analysts)} LLM analysts with quant evidence ({mode_label})...")
         print(f"  Value:  {', '.join(a.name for a in llm_analysts if a.domain == 'value')}")
         print(f"  Macro:  {', '.join(a.name for a in llm_analysts if a.domain == 'macro')}")
@@ -352,9 +370,9 @@ def main(argv: list[str] | None = None) -> None:
                     all_signals[ticker] = {}
                 all_signals[ticker][name] = sig
     else:
-        # Fallback: quant-only mode (Ollama not running)
-        if not ollama_available:
-            print("\n  Ollama unavailable -- falling back to quant-only mode")
+        # Fallback: quant-only mode (no LLM backend available)
+        if not llm_available:
+            print("\n  No LLM backend available -- falling back to quant-only mode")
         all_signals = quant_signals
 
     analyst_elapsed = quant_elapsed + llm_elapsed
@@ -440,7 +458,7 @@ def main(argv: list[str] | None = None) -> None:
     SCORE_THRESHOLD = 0.3  # Normalized score threshold for action
 
     # Determine which analyst names are LLM vs quant for quorum filtering
-    llm_analyst_names = {a.name for a in llm_analysts} if ollama_available else set()
+    llm_analyst_names = {a.name for a in llm_analysts} if llm_available else set()
     quant_analyst_names = {a.name for a in quant_analysts}
 
     decisions: dict[str, dict[str, Any]] = {}

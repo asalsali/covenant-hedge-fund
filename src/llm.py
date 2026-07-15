@@ -1,10 +1,18 @@
 """Shared LLM call utility for Covenant Hedge Fund analysts.
 
-Supports Ollama (local) as the sole LLM backend.
-Chain: Ollama available -> use it. Ollama unavailable -> quant-only mode.
-No paid API dependencies.
+Supports two backends:
+  1. OpenRouter (free-tier cloud models) -- primary when OPENROUTER_API_KEY is set
+  2. Ollama (local) -- fallback when OpenRouter is unavailable
 
-Model selection priority:
+Chain: OpenRouter available -> use it. Ollama available -> use it.
+Both unavailable -> quant-only mode.
+
+Model selection priority (OpenRouter):
+  1. --openrouter-model CLI flag (passed via set_openrouter_model())
+  2. OPENROUTER_MODEL env var
+  3. Default: meta-llama/llama-3.3-70b-instruct:free
+
+Model selection priority (Ollama):
   1. --model CLI flag (passed via set_model())
   2. OLLAMA_MODEL env var
   3. Auto-detect: pick the best model already pulled in Ollama
@@ -20,13 +28,14 @@ import pathlib
 import sys
 import time
 import urllib.request
+import urllib.error
 
 
 # Fallback string -- triggers neutral/0 in analyst parsing
 _FALLBACK_RESPONSE = json.dumps({
     "signal": "neutral",
     "confidence": 0,
-    "reasoning": "LLM unavailable, Ollama not running",
+    "reasoning": "LLM unavailable, no backend running",
 })
 
 # Instruction suffix appended to every analyst system prompt
@@ -39,7 +48,7 @@ LLM_INSTRUCTION_SUFFIX = (
 )
 
 # ---------------------------------------------------------------------------
-# Tiered model recommendations (best first)
+# Tiered model recommendations for Ollama (best first)
 # ---------------------------------------------------------------------------
 # Each tuple: (model_name, approx_vram_gb, tier_label)
 MODEL_TIERS: list[tuple[str, float, str]] = [
@@ -61,6 +70,24 @@ _OLLAMA_AVAILABLE: bool | None = None  # cached after first check
 _OLLAMA_PULLED_MODELS: list[str] | None = None  # cached after first query
 
 # ---------------------------------------------------------------------------
+# OpenRouter configuration
+# ---------------------------------------------------------------------------
+_OPENROUTER_API_KEY: str | None = os.environ.get("OPENROUTER_API_KEY")
+_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+_OPENROUTER_DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+_OPENROUTER_MODEL: str | None = None  # resolved lazily
+_OPENROUTER_AVAILABLE: bool | None = None  # cached after first check
+
+# Free models available on OpenRouter (no credit card needed)
+OPENROUTER_FREE_MODELS: list[tuple[str, str]] = [
+    ("meta-llama/llama-3.3-70b-instruct:free", "Best for financial reasoning"),
+    ("qwen/qwen3-235b-a22b:free", "Largest free model"),
+    ("deepseek/deepseek-r1-0528:free", "Strong reasoning"),
+    ("google/gemma-3-27b-it:free", "Good general purpose"),
+    ("mistralai/mistral-small-3.1-24b-instruct:free", "Fast, compact"),
+]
+
+# ---------------------------------------------------------------------------
 # Content-hash LLM response caching
 # ---------------------------------------------------------------------------
 _CACHE_DIR = pathlib.Path(__file__).resolve().parent.parent / "cache" / "llm"
@@ -80,9 +107,9 @@ def get_cache_stats() -> dict[str, int]:
     return {"hits": _CACHE_HITS, "misses": _CACHE_MISSES}
 
 
-def _cache_hash(system_prompt: str, user_prompt: str) -> str:
-    """Compute a SHA-256 content hash for a prompt pair."""
-    payload = (system_prompt + "\n---\n" + user_prompt).encode("utf-8")
+def _cache_hash(system_prompt: str, user_prompt: str, model: str) -> str:
+    """Compute a SHA-256 content hash for a prompt pair + model."""
+    payload = (model + "\n===\n" + system_prompt + "\n---\n" + user_prompt).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -119,19 +146,37 @@ def _cache_store(hash_key: str, response: str, model: str) -> None:
     path.write_text(json.dumps(entry, indent=2), encoding="utf-8")
 
 
+# ---------------------------------------------------------------------------
+# Model selection: Ollama
+# ---------------------------------------------------------------------------
+
 def set_model(model: str) -> None:
-    """Override the model from CLI (highest priority)."""
+    """Override the Ollama model from CLI (highest priority)."""
     global _OLLAMA_MODEL
     _OLLAMA_MODEL = model
 
 
 def get_active_model() -> str:
-    """Return the model that will be used for LLM calls."""
+    """Return the model that will be used for LLM calls.
+
+    Returns the OpenRouter model if available, otherwise the Ollama model.
+    """
+    if _check_openrouter():
+        return _resolve_openrouter_model()
     return _resolve_model()
 
 
+def get_active_backend() -> str:
+    """Return the name of the backend that will be used ('openrouter', 'ollama', or 'none')."""
+    if _check_openrouter():
+        return "openrouter"
+    if _check_ollama():
+        return "ollama"
+    return "none"
+
+
 def _resolve_model() -> str:
-    """Resolve which model to use, following the priority chain."""
+    """Resolve which Ollama model to use, following the priority chain."""
     global _OLLAMA_MODEL
 
     # Already resolved
@@ -151,7 +196,7 @@ def _resolve_model() -> str:
         for recommended in _RECOMMENDED_MODELS:
             if recommended in pulled:
                 _OLLAMA_MODEL = recommended
-                print(f"  [LLM] Auto-selected model: {recommended}", file=sys.stderr)
+                print(f"  [LLM] Auto-selected Ollama model: {recommended}", file=sys.stderr)
                 return _OLLAMA_MODEL
 
         # No recommended model found -- use first available model
@@ -164,6 +209,45 @@ def _resolve_model() -> str:
     # Priority 4: default
     _OLLAMA_MODEL = _DEFAULT_MODEL
     return _OLLAMA_MODEL
+
+
+# ---------------------------------------------------------------------------
+# Model selection: OpenRouter
+# ---------------------------------------------------------------------------
+
+def set_openrouter_model(model: str) -> None:
+    """Override the OpenRouter model from CLI (highest priority)."""
+    global _OPENROUTER_MODEL
+    _OPENROUTER_MODEL = model
+
+
+def _resolve_openrouter_model() -> str:
+    """Resolve which OpenRouter model to use."""
+    global _OPENROUTER_MODEL
+
+    if _OPENROUTER_MODEL is not None:
+        return _OPENROUTER_MODEL
+
+    env_model = os.environ.get("OPENROUTER_MODEL")
+    if env_model:
+        _OPENROUTER_MODEL = env_model
+        return _OPENROUTER_MODEL
+
+    _OPENROUTER_MODEL = _OPENROUTER_DEFAULT_MODEL
+    return _OPENROUTER_MODEL
+
+
+# ---------------------------------------------------------------------------
+# Backend availability checks
+# ---------------------------------------------------------------------------
+
+def _check_openrouter() -> bool:
+    """Check if OpenRouter is configured (API key present)."""
+    global _OPENROUTER_AVAILABLE
+    if _OPENROUTER_AVAILABLE is not None:
+        return _OPENROUTER_AVAILABLE
+    _OPENROUTER_AVAILABLE = bool(_OPENROUTER_API_KEY and _OPENROUTER_API_KEY.strip())
+    return _OPENROUTER_AVAILABLE
 
 
 def _get_pulled_models() -> list[str]:
@@ -211,11 +295,17 @@ def _check_ollama() -> bool:
     return _OLLAMA_AVAILABLE
 
 
+# ---------------------------------------------------------------------------
+# LLM call: main entry point
+# ---------------------------------------------------------------------------
+
 def call_llm(system_prompt: str, user_prompt: str) -> str:
     """Call an LLM and return the raw text response.
 
-    Chain: Ollama available -> use it. Ollama unavailable -> fallback (quant-only).
-    No paid API keys. No middle step.
+    Chain:
+      1. OpenRouter (free cloud models) -- if OPENROUTER_API_KEY is set
+      2. Ollama (local) -- if running locally
+      3. Fallback (quant-only mode)
 
     Args:
         system_prompt: System-level instruction (analyst philosophy).
@@ -224,24 +314,149 @@ def call_llm(system_prompt: str, user_prompt: str) -> str:
     Returns:
         Raw text response from the LLM.
     """
-    # 0. Cache check -- return cached response if identical prompt seen before
-    hash_key = _cache_hash(system_prompt, user_prompt)
+    # Determine which model will be used (for cache key)
+    if _check_openrouter():
+        model = _resolve_openrouter_model()
+    elif _check_ollama():
+        model = _resolve_model()
+    else:
+        return _FALLBACK_RESPONSE
+
+    # 0. Cache check -- return cached response if identical prompt+model seen before
+    hash_key = _cache_hash(system_prompt, user_prompt, model)
     cached = _cache_lookup(hash_key)
     if cached is not None:
         return cached
 
-    # 1. Ollama (free, local) -- sole LLM backend
-    if _check_ollama():
-        result = _call_ollama(system_prompt, user_prompt)
+    # 1. OpenRouter (free cloud models) -- primary backend
+    if _check_openrouter():
+        result = _call_openrouter(system_prompt, user_prompt, model)
         if result != _FALLBACK_RESPONSE:
-            _cache_store(hash_key, result, _resolve_model())
+            _cache_store(hash_key, result, model)
             return result
 
-    # 2. Fallback -- quant-only mode (no LLM analysts)
-    if not _check_ollama():
-        print("  [LLM] Ollama not available -- quant-only mode", file=sys.stderr)
+    # 2. Ollama (free, local) -- fallback backend
+    if _check_ollama():
+        ollama_model = _resolve_model()
+        ollama_hash = _cache_hash(system_prompt, user_prompt, ollama_model)
+        cached_ollama = _cache_lookup(ollama_hash)
+        if cached_ollama is not None:
+            return cached_ollama
+        result = _call_ollama(system_prompt, user_prompt)
+        if result != _FALLBACK_RESPONSE:
+            _cache_store(ollama_hash, result, ollama_model)
+            return result
+
+    # 3. Fallback -- quant-only mode (no LLM analysts)
+    print("  [LLM] No backend available -- quant-only mode", file=sys.stderr)
     return _FALLBACK_RESPONSE
 
+
+# ---------------------------------------------------------------------------
+# OpenRouter backend
+# ---------------------------------------------------------------------------
+
+def _call_openrouter(
+    system_prompt: str,
+    user_prompt: str,
+    model: str | None = None,
+    temperature: float = 0.3,
+    max_tokens: int = 256,
+) -> str:
+    """Call OpenRouter's OpenAI-compatible chat completions API.
+
+    Uses urllib.request (stdlib) -- no external dependencies required.
+    Includes retry with exponential backoff on 429 (rate limit) responses.
+
+    Args:
+        system_prompt: System-level instruction.
+        user_prompt: User-level content.
+        model: OpenRouter model identifier. Defaults to _resolve_openrouter_model().
+        temperature: Sampling temperature (0-2).
+        max_tokens: Maximum response tokens.
+
+    Returns:
+        Raw text response, or _FALLBACK_RESPONSE on failure.
+    """
+    global _OPENROUTER_AVAILABLE
+
+    api_key = _OPENROUTER_API_KEY
+    if not api_key:
+        return _FALLBACK_RESPONSE
+
+    if model is None:
+        model = _resolve_openrouter_model()
+
+    payload = json.dumps({
+        "model": model,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    }).encode("utf-8")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        "HTTP-Referer": "https://github.com/covenant-hedge-fund",
+        "X-Title": "Covenant Hedge Fund",
+    }
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            req = urllib.request.Request(
+                _OPENROUTER_BASE_URL,
+                data=payload,
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+                content = body["choices"][0]["message"]["content"]
+                return content or _FALLBACK_RESPONSE
+
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                # Rate limited -- back off and retry
+                wait = 2 ** attempt + 1  # 2s, 3s, 5s
+                print(f"  [LLM] OpenRouter rate limited (429), "
+                      f"retrying in {wait}s (attempt {attempt + 1}/{max_retries})",
+                      file=sys.stderr)
+                time.sleep(wait)
+                continue
+            elif e.code == 401:
+                # Bad API key -- disable OpenRouter for this process
+                print("  [LLM] OpenRouter auth failed (401) -- "
+                      "check OPENROUTER_API_KEY", file=sys.stderr)
+                _OPENROUTER_AVAILABLE = False
+                return _FALLBACK_RESPONSE
+            else:
+                err_body = ""
+                try:
+                    err_body = e.read().decode("utf-8", errors="replace")[:200]
+                except Exception:
+                    pass
+                print(f"  [LLM] OpenRouter HTTP {e.code}: {err_body}",
+                      file=sys.stderr)
+                if attempt == max_retries - 1:
+                    return _FALLBACK_RESPONSE
+                time.sleep(1)
+
+        except Exception as e:
+            print(f"  [LLM] OpenRouter error: {e}", file=sys.stderr)
+            if attempt == max_retries - 1:
+                return _FALLBACK_RESPONSE
+            time.sleep(1)
+
+    return _FALLBACK_RESPONSE
+
+
+# ---------------------------------------------------------------------------
+# Ollama backend
+# ---------------------------------------------------------------------------
 
 def _call_ollama(system_prompt: str, user_prompt: str) -> str:
     """Call Ollama via its OpenAI-compatible API with retry.
