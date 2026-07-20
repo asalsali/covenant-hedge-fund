@@ -131,7 +131,17 @@ def _parse_llm_signal(
             lines = [l for l in lines if not l.strip().startswith("```")]
             text = "\n".join(lines).strip()
 
-        parsed = json.loads(text)
+        # Try parsing the whole response as JSON first
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            # Extract JSON object from within reasoning/thinking text
+            import re
+            match = re.search(r'\{[^{}]*"signal"\s*:\s*"[^"]*"[^{}]*\}', text)
+            if match:
+                parsed = json.loads(match.group())
+            else:
+                raise json.JSONDecodeError("No JSON found", text, 0)
         signal = parsed.get("signal", "neutral")
         if signal not in ("bullish", "bearish", "neutral"):
             signal = "neutral"
