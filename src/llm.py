@@ -40,11 +40,10 @@ _FALLBACK_RESPONSE = json.dumps({
 
 # Instruction suffix appended to every analyst system prompt
 LLM_INSTRUCTION_SUFFIX = (
-    '\n\nYou must respond with EXACTLY this JSON format:\n'
-    '{"signal": "bullish" or "bearish" or "neutral", '
-    '"confidence": 0-100, '
-    '"reasoning": "your reasoning in under 180 characters"}\n'
-    'Respond with ONLY the JSON, no other text.'
+    '\n\nIMPORTANT: Output ONLY a single JSON object. No reasoning, no explanation, no thinking.\n'
+    'Format: {"signal": "bullish", "confidence": 65, "reasoning": "brief reason under 180 chars"}\n'
+    'signal must be "bullish", "bearish", or "neutral". confidence must be 0-100.\n'
+    'Output the JSON object and NOTHING else.'
 )
 
 # ---------------------------------------------------------------------------
@@ -486,8 +485,8 @@ def _call_ollama(system_prompt: str, user_prompt: str) -> str:
         try:
             response = client.chat.completions.create(
                 model=model,
-                max_tokens=256,
-                temperature=0.3,  # lower temp for more consistent JSON output
+                max_tokens=512,
+                temperature=0.1,  # very low temp for reliable JSON output
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
