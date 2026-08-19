@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Covenant Governed Trading Agent</title>
+    <style>
+        :root {
+            --gold: #c9a227;
+            --bg: #0d1117;
+            --surface: #161b22;
+            --card: #1c2128;
+            --text: #e6edf3;
+            --dim: #8b949e;
+            --green: #3fb950;
+            --red: #f85149;
+            --orange: #d29922;
+            --blue: #58a6ff;
+            --border: #30363d;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+
+        /* Header */
+        header {
+            border-bottom: 1px solid var(--border);
+            padding: 16px 0;
+        }
+        header .top {
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        header h1 { font-size: 20px; color: var(--gold); }
+        header .status {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 13px; color: var(--dim);
+        }
+        .dot { width: 8px; height: 8px; border-radius: 50%; }
+        .dot.live { background: var(--green); animation: pulse 2s infinite; }
+        .dot.dry { background: var(--orange); }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        /* Stats bar */
+        .stats {
+            display: grid; grid-template-columns: repeat(5, 1fr);
+            gap: 16px; padding: 24px 0;
+        }
+        .stat {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .stat .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); }
+        .stat .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+        .stat .value.green { color: var(--green); }
+        .stat .value.red { color: var(--red); }
+        .stat .value.gold { color: var(--gold); }
+
+        /* Two-column layout */
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding-bottom: 24px; }
+        .full-width { grid-column: 1 / -1; }
+
+        /* Cards */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .card h2 {
+            font-size: 14px; text-transform: uppercase; letter-spacing: 1.5px;
+            color: var(--gold); margin-bottom: 16px;
+        }
+
+        /* Governance rules */
+        .rule {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+        }
+        .rule:last-child { border: none; }
+        .rule .id { color: var(--dim); font-family: monospace; width: 70px; }
+        .rule .name { flex: 1; }
+        .rule .val { color: var(--gold); font-family: monospace; }
+
+        /* Decision feed */
+        .decision {
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .decision:last-child { border: none; }
+        .decision .top-row {
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .decision .token { font-weight: 700; font-size: 15px; }
+        .decision .badge {
+            padding: 2px 10px; border-radius: 12px; font-size: 11px;
+            font-weight: 600; text-transform: uppercase;
+        }
+        .badge.approve { background: rgba(63,185,80,0.15); color: var(--green); }
+        .badge.reject { background: rgba(248,81,73,0.15); color: var(--red); }
+        .badge.hold { background: rgba(139,148,158,0.15); color: var(--dim); }
+        .badge.buy { background: rgba(63,185,80,0.15); color: var(--green); }
+        .badge.sell { background: rgba(248,81,73,0.15); color: var(--red); }
+        .decision .reasoning {
+            font-size: 12px; color: var(--dim); margin-top: 4px;
+        }
+        .decision .meta {
+            font-size: 11px; color: var(--dim); margin-top: 2px;
+            font-family: monospace;
+        }
+        .decision .governance-detail {
+            font-size: 11px; margin-top: 4px; padding: 6px 8px;
+            background: var(--card); border-radius: 4px;
+        }
+        .governance-detail .violated { color: var(--red); }
+        .governance-detail .passed { color: var(--green); }
+
+        /* Balances */
+        .balance-row {
+            display: flex; justify-content: space-between;
+            padding: 8px 0; border-bottom: 1px solid var(--border);
+            font-size: 14px;
+        }
+        .balance-row:last-child { border: none; }
+        .balance-row .symbol { font-weight: 600; }
+        .balance-row .amount { font-family: monospace; color: var(--gold); }
+
+        /* Empty state */
+        .empty {
+            text-align: center; padding: 40px 20px;
+            color: var(--dim); font-size: 14px;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center; padding: 20px 0;
+            color: var(--dim); font-size: 12px;
+            border-top: 1px solid var(--border);
+        }
+        footer a { color: var(--gold); text-decoration: none; }
+
+        @media (max-width: 768px) {
+            .stats { grid-template-columns: repeat(2, 1fr); }
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="top">
+                <h1>Covenant Governed Trading Agent</h1>
+                <div class="status">
+                    <div class="dot dry" id="statusDot"></div>
+                    <span id="statusText">Loading...</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="label">Portfolio Value</div>
+                <div class="value gold" id="portfolioValue">--</div>
+            </div>
+            <div class="stat">
+                <div class="label">Trades Executed</div>
+                <div class="value" id="tradesCount">0</div>
+            </div>
+            <div class="stat">
+                <div class="label">Governance Approved</div>
+                <div class="value green" id="approvedCount">0</div>
+            </div>
+            <div class="stat">
+                <div class="label">Governance Rejected</div>
+                <div class="value red" id="rejectedCount">0</div>
+            </div>
+            <div class="stat">
+                <div class="label">Approval Rate</div>
+                <div class="value" id="approvalRate">--</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h2>Governance Rules</h2>
+                <div id="rulesContainer">
+                    <div class="rule"><span class="id">GOV-001</span><span class="name">Max Position Size</span><span class="val">25%</span></div>
+                    <div class="rule"><span class="id">GOV-002</span><span class="name">Max Single Trade</span><span class="val">10%</span></div>
+                    <div class="rule"><span class="id">GOV-003</span><span class="name">Stablecoin Floor</span><span class="val">20%</span></div>
+                    <div class="rule"><span class="id">GOV-004</span><span class="name">Max Drawdown Stop</span><span class="val">15%</span></div>
+                    <div class="rule"><span class="id">GOV-005</span><span class="name">Trade Cooldown</span><span class="val">60s</span></div>
+                    <div class="rule"><span class="id">GOV-006</span><span class="name">Max Daily Trades</span><span class="val">20/day</span></div>
+                    <div class="rule"><span class="id">GOV-007</span><span class="name">Price Impact Limit</span><span class="val">1%</span></div>
+                    <div class="rule"><span class="id">GOV-008</span><span class="name">Minimum Quorum</span><span class="val">3 signals</span></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Wallet Balances</h2>
+                <div id="balancesContainer">
+                    <div class="empty">Connect wallet to view balances</div>
+                </div>
+            </div>
+
+            <div class="card full-width">
+                <h2>Decision Feed</h2>
+                <div id="decisionsContainer">
+                    <div class="empty">No decisions yet. Start the trading agent to see live governance decisions.</div>
+                </div>
+            </div>
+
+            <div class="card full-width">
+                <h2>Governance Ledger</h2>
+                <div id="ledgerContainer">
+                    <div class="empty">No governance decisions recorded.</div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Covenant Governed Trading Agent &middot; <a href="https://github.com/asalsali/covenant-hedge-fund">GitHub</a> &middot; Every trade passes through 8 governance rules before execution</p>
+        </footer>
+    </div>
+
+    <script>
+        // Config
+        const TRADING_LOG_URL = '../data/trading-log.json';
+        const GOVERNANCE_LEDGER_URL = '../data/governance-ledger.json';
+        const REFRESH_INTERVAL = 5000; // 5 seconds
+
+        function formatTime(ts) {
+            if (!ts) return '';
+            const d = new Date(ts);
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        function renderDecision(record) {
+            const dec = record.decision || {};
+            const gov = record.governance || {};
+            const exec = record.execution || {};
+            const action = dec.action || 'hold';
+            const govAction = gov.action || '';
+
+            let badgeClass = action === 'buy' ? 'buy' : action === 'sell' ? 'sell' : 'hold';
+            let govBadge = '';
+            if (govAction === 'approve') {
+                govBadge = '<span class="badge approve">Approved</span>';
+            } else if (govAction === 'reject') {
+                govBadge = '<span class="badge reject">Rejected</span>';
+            }
+
+            let govDetail = '';
+            if (gov.rules_violated && gov.rules_violated.length > 0) {
+                govDetail = `<div class="governance-detail">
+                    <span class="violated">${gov.rules_violated.join('<br>')}</span>
+                </div>`;
+            } else if (govAction === 'approve') {
+                govDetail = `<div class="governance-detail">
+                    <span class="passed">${gov.reasoning || 'All rules passed'}</span>
+                </div>`;
+            }
+
+            let execInfo = '';
+            if (exec && exec.success) {
+                execInfo = `<div class="meta">${exec.input} -> ${exec.output}${exec.tx_signature ? ' | TX: ' + exec.tx_signature.slice(0, 12) + '...' : ''}</div>`;
+            } else if (exec && exec.error) {
+                execInfo = `<div class="meta" style="color:var(--red)">${exec.error}</div>`;
+            }
+
+            return `<div class="decision">
+                <div class="top-row">
+                    <span class="token">${record.token || '?'}</span>
+                    <div>
+                        <span class="badge ${badgeClass}">${action}</span>
+                        ${govBadge}
+                    </div>
+                </div>
+                <div class="reasoning">${dec.reasoning || ''}</div>
+                ${govDetail}
+                ${execInfo}
+                <div class="meta">${formatTime(record.timestamp)}</div>
+            </div>`;
+        }
+
+        function renderLedgerEntry(entry) {
+            const action = entry.action || '';
+            const badgeClass = action === 'approve' ? 'approve' : 'reject';
+            return `<div class="decision">
+                <div class="top-row">
+                    <span class="token">${entry.input_symbol} -> ${entry.output_symbol}</span>
+                    <span class="badge ${badgeClass}">${action}</span>
+                </div>
+                <div class="reasoning">${entry.reasoning}</div>
+                <div class="meta">${formatTime(entry.timestamp)} | Amount: ${entry.amount}</div>
+            </div>`;
+        }
+
+        async function fetchJSON(url) {
+            try {
+                const resp = await fetch(url + '?t=' + Date.now());
+                if (!resp.ok) return null;
+                return await resp.json();
+            } catch { return null; }
+        }
+
+        async function refresh() {
+            // Trading log
+            const records = await fetchJSON(TRADING_LOG_URL);
+            if (records && records.length > 0) {
+                const container = document.getElementById('decisionsContainer');
+                container.innerHTML = records.slice().reverse().map(renderDecision).join('');
+
+                // Stats
+                const approved = records.filter(r => r.governance && r.governance.action === 'approve').length;
+                const rejected = records.filter(r => r.governance && r.governance.action === 'reject').length;
+                const holds = records.filter(r => r.decision && r.decision.action === 'hold').length;
+                const executed = records.filter(r => r.execution && r.execution.success).length;
+
+                document.getElementById('tradesCount').textContent = executed;
+                document.getElementById('approvedCount').textContent = approved;
+                document.getElementById('rejectedCount').textContent = rejected;
+
+                const total = approved + rejected;
+                document.getElementById('approvalRate').textContent = total > 0
+                    ? Math.round(approved / total * 100) + '%' : '--';
+
+                document.getElementById('statusDot').className = 'dot live';
+                document.getElementById('statusText').textContent = `${records.length} decisions | Last: ${formatTime(records[records.length-1].timestamp)}`;
+            }
+
+            // Governance ledger
+            const ledger = await fetchJSON(GOVERNANCE_LEDGER_URL);
+            if (ledger && ledger.decisions && ledger.decisions.length > 0) {
+                const container = document.getElementById('ledgerContainer');
+                container.innerHTML = ledger.decisions.slice(-20).reverse().map(renderLedgerEntry).join('');
+            }
+        }
+
+        // Initial load + auto-refresh
+        refresh();
+        setInterval(refresh, REFRESH_INTERVAL);
+    </script>
+</body>
+</html>

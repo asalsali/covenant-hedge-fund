@@ -1,0 +1,105 @@
+{
+  "decisions": [
+    {
+      "timestamp": "2026-08-19T14:00:00Z",
+      "action": "approve",
+      "input_symbol": "USDC",
+      "output_symbol": "SOL",
+      "amount": 25.0,
+      "rules_checked": [
+        "GOV-001",
+        "GOV-002",
+        "GOV-003",
+        "GOV-004",
+        "GOV-005",
+        "GOV-006",
+        "GOV-007",
+        "GOV-008"
+      ],
+      "rules_violated": [],
+      "reasoning": "All 8 governance rules passed"
+    },
+    {
+      "timestamp": "2026-08-19T14:05:00Z",
+      "action": "reject",
+      "input_symbol": "USDC",
+      "output_symbol": "JUP",
+      "amount": 20.0,
+      "rules_checked": [
+        "GOV-001",
+        "GOV-002",
+        "GOV-003",
+        "GOV-004",
+        "GOV-005",
+        "GOV-006",
+        "GOV-007",
+        "GOV-008"
+      ],
+      "rules_violated": [
+        "GOV-005: 240s remaining in cooldown"
+      ],
+      "reasoning": "Trade rejected: GOV-005: 240s remaining in cooldown"
+    },
+    {
+      "timestamp": "2026-08-19T14:15:00Z",
+      "action": "approve",
+      "input_symbol": "USDC",
+      "output_symbol": "JUP",
+      "amount": 20.0,
+      "rules_checked": [
+        "GOV-001",
+        "GOV-002",
+        "GOV-003",
+        "GOV-004",
+        "GOV-005",
+        "GOV-006",
+        "GOV-007",
+        "GOV-008"
+      ],
+      "rules_violated": [],
+      "reasoning": "All 8 governance rules passed"
+    },
+    {
+      "timestamp": "2026-08-19T14:20:00Z",
+      "action": "reject",
+      "input_symbol": "SOL",
+      "output_symbol": "USDC",
+      "amount": 0.09,
+      "rules_checked": [
+        "GOV-001",
+        "GOV-002",
+        "GOV-003",
+        "GOV-004",
+        "GOV-005",
+        "GOV-006",
+        "GOV-007",
+        "GOV-008"
+      ],
+      "rules_violated": [
+        "GOV-008: Only 2 analyst signals (minimum 3)"
+      ],
+      "reasoning": "Trade rejected: GOV-008: Only 2 analyst signals (minimum 3)"
+    },
+    {
+      "timestamp": "2026-08-19T14:25:00Z",
+      "action": "reject",
+      "input_symbol": "USDC",
+      "output_symbol": "WIF",
+      "amount": 30.0,
+      "rules_checked": [
+        "GOV-001",
+        "GOV-002",
+        "GOV-003",
+        "GOV-004",
+        "GOV-005",
+        "GOV-006",
+        "GOV-007",
+        "GOV-008"
+      ],
+      "rules_violated": [
+        "GOV-003: Selling USDC would drop stablecoin to 15.2% (floor 20%)"
+      ],
+      "reasoning": "Trade rejected: GOV-003: Selling USDC would drop stablecoin to 15.2% (floor 20%)"
+    }
+  ]
+}
