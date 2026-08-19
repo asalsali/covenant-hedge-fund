@@ -30,6 +30,7 @@ from src.solana.governor import Governor
 from src.solana.jupiter import get_quote, execute_swap, SwapResult
 from src.solana.tokens import TOKEN_MINTS, USDC
 from src.solana.wallet import get_all_balances
+from src.solana.signer import load_keypair, make_sign_and_send_fn
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -187,6 +188,7 @@ def run_cycle(
     devnet: bool = False,
     model: str | None = None,
     max_trade_usdc: float = 50.0,
+    sign_and_send_fn: Any = None,
 ) -> list[dict]:
     """Run one analysis → governance → execution cycle.
 
@@ -311,6 +313,7 @@ def run_cycle(
             output_symbol=output_sym,
             amount=amount,
             user_pubkey=wallet_pubkey,
+            sign_and_send_fn=sign_and_send_fn if not dry_run else None,
             dry_run=dry_run,
         )
         record["execution"] = {
@@ -356,6 +359,18 @@ def main(argv: list[str] | None = None) -> None:
         print(f"    [{rule['id']}] {rule['name']}: {rule['description']}")
     print()
 
+    # Load keypair for live trading
+    sign_fn = None
+    if not args.dry_run:
+        try:
+            keypair = load_keypair()
+            sign_fn = make_sign_and_send_fn(keypair, devnet=args.devnet)
+            print(f"  Signer:   {keypair.pubkey()} (loaded)")
+        except ValueError as e:
+            print(f"  WARNING: {e}")
+            print(f"  Falling back to dry-run mode.")
+            args.dry_run = True
+
     # Normalize token names
     tokens = [t.upper() for t in args.tokens]
 
@@ -375,6 +390,7 @@ def main(argv: list[str] | None = None) -> None:
                 governor=governor,
                 dry_run=args.dry_run,
                 devnet=args.devnet,
+                sign_and_send_fn=sign_fn,
                 model=args.model,
                 max_trade_usdc=args.max_trade_usdc,
             )
