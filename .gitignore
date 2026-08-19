@@ -46,3 +46,8 @@ registry/dispositions.json
 # Data cache
 .cache/
 *.pickle
+
+# Runtime artifacts
+cache/
+reports/
+docs/report-data.json

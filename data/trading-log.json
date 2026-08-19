@@ -1,162 +1,38 @@
 [
   {
-    "timestamp": "2026-08-19T14:00:00Z",
+    "timestamp": "2026-08-19T20:26:35Z",
     "token": "SOL",
     "decision": {
-      "action": "buy",
-      "reasoning": "Score +0.62 from 5 analysts",
-      "score": 0.62,
-      "quorum_count": 4
-    },
-    "governance": {
-      "action": "approve",
-      "reasoning": "All 8 governance rules passed",
-      "rules_checked": [
-        "GOV-001",
-        "GOV-002",
-        "GOV-003",
-        "GOV-004",
-        "GOV-005",
-        "GOV-006",
-        "GOV-007",
-        "GOV-008"
-      ],
-      "rules_violated": []
-    },
-    "execution": {
-      "success": true,
-      "input": "25.00 USDC",
-      "output": "0.1823 SOL",
-      "tx_signature": null,
-      "error": null
-    }
-  },
-  {
-    "timestamp": "2026-08-19T14:05:00Z",
-    "token": "JUP",
-    "decision": {
-      "action": "buy",
-      "reasoning": "Score +0.45 from 4 analysts",
-      "score": 0.45,
-      "quorum_count": 3
-    },
-    "governance": {
-      "action": "reject",
-      "reasoning": "Trade rejected: GOV-005: 240s remaining in cooldown",
-      "rules_checked": [
-        "GOV-001",
-        "GOV-002",
-        "GOV-003",
-        "GOV-004",
-        "GOV-005",
-        "GOV-006",
-        "GOV-007",
-        "GOV-008"
-      ],
-      "rules_violated": [
-        "GOV-005: 240s remaining in cooldown"
-      ]
-    },
-    "execution": null
-  },
-  {
-    "timestamp": "2026-08-19T14:10:00Z",
-    "token": "BONK",
-    "decision": {
       "action": "hold",
-      "reasoning": "Score within threshold (score=-0.12)",
-      "score": -0.12,
-      "quorum_count": 5
+      "reasoning": "Quorum not met: 0/2",
+      "score": 0.0,
+      "quorum_count": 0
     },
     "governance": null,
     "execution": null
   },
   {
-    "timestamp": "2026-08-19T14:15:00Z",
+    "timestamp": "2026-08-19T20:26:35Z",
     "token": "JUP",
     "decision": {
-      "action": "buy",
-      "reasoning": "Score +0.51 from 4 analysts",
-      "score": 0.51,
-      "quorum_count": 4
+      "action": "hold",
+      "reasoning": "Quorum not met: 0/2",
+      "score": 0.0,
+      "quorum_count": 0
     },
-    "governance": {
-      "action": "approve",
-      "reasoning": "All 8 governance rules passed",
-      "rules_checked": [
-        "GOV-001",
-        "GOV-002",
-        "GOV-003",
-        "GOV-004",
-        "GOV-005",
-        "GOV-006",
-        "GOV-007",
-        "GOV-008"
-      ],
-      "rules_violated": []
-    },
-    "execution": {
-      "success": true,
-      "input": "20.00 USDC",
-      "output": "24.39 JUP",
-      "tx_signature": null,
-      "error": null
-    }
-  },
-  {
-    "timestamp": "2026-08-19T14:20:00Z",
-    "token": "SOL",
-    "decision": {
-      "action": "sell",
-      "reasoning": "Score -0.41 from 5 analysts",
-      "score": -0.41,
-      "quorum_count": 4
-    },
-    "governance": {
-      "action": "reject",
-      "reasoning": "Trade rejected: GOV-008: Only 2 analyst signals (minimum 3)",
-      "rules_checked": [
-        "GOV-001",
-        "GOV-002",
-        "GOV-003",
-        "GOV-004",
-        "GOV-005",
-        "GOV-006",
-        "GOV-007",
-        "GOV-008"
-      ],
-      "rules_violated": [
-        "GOV-008: Only 2 analyst signals (minimum 3)"
-      ]
-    },
+    "governance": null,
     "execution": null
   },
   {
-    "timestamp": "2026-08-19T14:25:00Z",
-    "token": "WIF",
+    "timestamp": "2026-08-19T20:26:35Z",
+    "token": "BONK",
     "decision": {
-      "action": "buy",
-      "reasoning": "Score +0.73 from 6 analysts",
-      "score": 0.73,
-      "quorum_count": 5
+      "action": "hold",
+      "reasoning": "Quorum not met: 0/2",
+      "score": 0.0,
+      "quorum_count": 0
     },
-    "governance": {
-      "action": "reject",
-      "reasoning": "Trade rejected: GOV-003: Selling USDC would drop stablecoin to 15.2% (floor 20%)",
-      "rules_checked": [
-        "GOV-001",
-        "GOV-002",
-        "GOV-003",
-        "GOV-004",
-        "GOV-005",
-        "GOV-006",
-        "GOV-007",
-        "GOV-008"
-      ],
-      "rules_violated": [
-        "GOV-003: Selling USDC would drop stablecoin to 15.2% (floor 20%)"
-      ]
-    },
+    "governance": null,
     "execution": null
   }
 ]
