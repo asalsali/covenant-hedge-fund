@@ -77,6 +77,13 @@ _OPENROUTER_DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 _OPENROUTER_MODEL: str | None = None  # resolved lazily
 _OPENROUTER_AVAILABLE: bool | None = None  # cached after first check
 
+# ---------------------------------------------------------------------------
+# OpenAI configuration (direct API, highest priority)
+# ---------------------------------------------------------------------------
+_OPENAI_API_KEY: str | None = os.environ.get("OPENAI_API_KEY")
+_OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
+_OPENAI_MODEL: str | None = None
+
 # Free models available on OpenRouter (no credit card needed)
 OPENROUTER_FREE_MODELS: list[tuple[str, str]] = [
     ("meta-llama/llama-3.3-70b-instruct:free", "Best for financial reasoning"),
@@ -156,17 +163,18 @@ def set_model(model: str) -> None:
 
 
 def get_active_model() -> str:
-    """Return the model that will be used for LLM calls.
-
-    Returns the OpenRouter model if available, otherwise the Ollama model.
-    """
+    """Return the model that will be used for LLM calls."""
+    if _check_openai():
+        return _OPENAI_MODEL or _OPENAI_DEFAULT_MODEL
     if _check_openrouter():
         return _resolve_openrouter_model()
     return _resolve_model()
 
 
 def get_active_backend() -> str:
-    """Return the name of the backend that will be used ('openrouter', 'ollama', or 'none')."""
+    """Return the name of the backend that will be used ('openai', 'openrouter', 'ollama', or 'none')."""
+    if _check_openai():
+        return "openai"
     if _check_openrouter():
         return "openrouter"
     if _check_ollama():
@@ -239,6 +247,36 @@ def _resolve_openrouter_model() -> str:
 # ---------------------------------------------------------------------------
 # Backend availability checks
 # ---------------------------------------------------------------------------
+
+def _check_openai() -> bool:
+    """Check if OpenAI is configured (API key present)."""
+    return bool(_OPENAI_API_KEY and _OPENAI_API_KEY.strip())
+
+
+def _call_openai(
+    system_prompt: str,
+    user_prompt: str,
+    model: str | None = None,
+) -> str:
+    """Call OpenAI API directly."""
+    model = model or _OPENAI_MODEL or _OPENAI_DEFAULT_MODEL
+    try:
+        import openai
+        client = openai.OpenAI(api_key=_OPENAI_API_KEY)
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
+            max_tokens=512,
+        )
+        return response.choices[0].message.content or _FALLBACK_RESPONSE
+    except Exception as e:
+        print(f"  [LLM] OpenAI error: {e}", file=sys.stderr)
+        return _FALLBACK_RESPONSE
+
 
 def _check_openrouter() -> bool:
     """Check if OpenRouter is configured (API key present)."""
@@ -314,7 +352,9 @@ def call_llm(system_prompt: str, user_prompt: str) -> str:
         Raw text response from the LLM.
     """
     # Determine which model will be used (for cache key)
-    if _check_openrouter():
+    if _check_openai():
+        model = _OPENAI_MODEL or _OPENAI_DEFAULT_MODEL
+    elif _check_openrouter():
         model = _resolve_openrouter_model()
     elif _check_ollama():
         model = _resolve_model()
@@ -327,14 +367,21 @@ def call_llm(system_prompt: str, user_prompt: str) -> str:
     if cached is not None:
         return cached
 
-    # 1. OpenRouter (free cloud models) -- primary backend
+    # 1. OpenAI (direct API) -- highest priority
+    if _check_openai():
+        result = _call_openai(system_prompt, user_prompt, model)
+        if result != _FALLBACK_RESPONSE:
+            _cache_store(hash_key, result, model)
+            return result
+
+    # 2. OpenRouter (free cloud models)
     if _check_openrouter():
         result = _call_openrouter(system_prompt, user_prompt, model)
         if result != _FALLBACK_RESPONSE:
             _cache_store(hash_key, result, model)
             return result
 
-    # 2. Ollama (free, local) -- fallback backend
+    # 3. Ollama (free, local) -- fallback backend
     if _check_ollama():
         ollama_model = _resolve_model()
         ollama_hash = _cache_hash(system_prompt, user_prompt, ollama_model)

@@ -101,50 +101,41 @@ def _run_analysts(
     market_data: dict[str, Any],
     model: str | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Run the analyst pipeline on the given tokens."""
-    from src.agents.quant import QUANT_ANALYSTS
+    """Run the crypto analyst pipeline on the given tokens.
+
+    Uses crypto quant analysts for evidence, then crypto LLM personas
+    (via OpenAI API) for directional signals. Only crypto-relevant
+    analysts — no traditional equity value/macro personas.
+    """
     from src.agents.crypto import CRYPTO_ANALYSTS, CRYPTO_LLM_ANALYSTS
-    from src.agents.value import VALUE_ANALYSTS
-    from src.agents.macro import MACRO_ANALYSTS
     from src.agents.parallel import run_analysts_parallel
     from src.evidence import format_evidence_brief
 
-    if model:
-        from src.llm import set_model
-        set_model(model)
-
-    # Run quant analysts
-    quant_analysts = [Cls() for Cls in QUANT_ANALYSTS]
-    quant_analysts.extend(Cls() for Cls in CRYPTO_ANALYSTS)
+    # Run crypto quant analysts for evidence
+    quant_analysts = [Cls() for Cls in CRYPTO_ANALYSTS]
     quant_signals, _ = run_analysts_parallel(quant_analysts, tokens, market_data)
 
-    # Build evidence briefs
+    # Build evidence briefs from quant signals
     evidence = {}
     for token in tokens:
         ticker_quant = quant_signals.get(token, {})
         if ticker_quant:
             evidence[token] = format_evidence_brief(token, ticker_quant)
 
-    # Run LLM analysts
-    from src.llm import get_active_backend
-    if get_active_backend() != "none":
-        llm_analysts = (
-            [Cls() for Cls in VALUE_ANALYSTS]
-            + [Cls() for Cls in MACRO_ANALYSTS]
-            + [Cls() for Cls in CRYPTO_LLM_ANALYSTS]
-        )
-        llm_signals, _ = run_analysts_parallel(
-            llm_analysts, tokens, market_data, quant_evidence=evidence,
-        )
-        # Merge
-        for token in tokens:
-            for name, sig in quant_signals.get(token, {}).items():
-                if token not in llm_signals:
-                    llm_signals[token] = {}
-                llm_signals[token][name] = sig
-        return llm_signals
-    else:
-        return quant_signals
+    # Run crypto LLM analysts with OpenAI
+    llm_analysts = [Cls() for Cls in CRYPTO_LLM_ANALYSTS]
+    llm_signals, _ = run_analysts_parallel(
+        llm_analysts, tokens, market_data, quant_evidence=evidence,
+    )
+
+    # Merge quant signals into LLM signals
+    for token in tokens:
+        for name, sig in quant_signals.get(token, {}).items():
+            if token not in llm_signals:
+                llm_signals[token] = {}
+            llm_signals[token][name] = sig
+
+    return llm_signals
 
 
 def _synthesize_decision(
