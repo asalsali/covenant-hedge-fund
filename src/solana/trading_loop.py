@@ -28,6 +28,7 @@ except ImportError:
 
 from src.solana.governor import Governor
 from src.solana.jupiter import get_quote, execute_swap, SwapResult
+from src.solana.memo import post_governance_memo
 from src.solana.tokens import TOKEN_MINTS, USDC
 from src.solana.wallet import get_all_balances
 from src.solana.signer import load_keypair, make_sign_and_send_fn
@@ -189,6 +190,7 @@ def run_cycle(
     model: str | None = None,
     max_trade_usdc: float = 50.0,
     sign_and_send_fn: Any = None,
+    memo_keypair: Any = None,
 ) -> list[dict]:
     """Run one analysis → governance → execution cycle.
 
@@ -299,6 +301,21 @@ def run_cycle(
             "rules_violated": gov_decision.rules_violated,
         }
 
+        # Post governance decision to chain as memo
+        if memo_keypair and not dry_run:
+            memo_data = {
+                "action": gov_decision.action,
+                "input_symbol": input_sym,
+                "output_symbol": output_sym,
+                "amount": amount,
+                "rules_violated": gov_decision.rules_violated,
+                "timestamp": gov_decision.timestamp,
+            }
+            memo_sig = post_governance_memo(memo_keypair, memo_data, devnet)
+            if memo_sig:
+                print(f"    Memo TX: {memo_sig}")
+                record["memo_tx"] = memo_sig
+
         if gov_decision.action == "reject":
             print(f"    {token}: BLOCKED by Governor — {gov_decision.reasoning}")
             records.append(record)
@@ -361,6 +378,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # Load keypair for live trading
     sign_fn = None
+    keypair = None
     if not args.dry_run:
         try:
             keypair = load_keypair()
@@ -391,6 +409,7 @@ def main(argv: list[str] | None = None) -> None:
                 dry_run=args.dry_run,
                 devnet=args.devnet,
                 sign_and_send_fn=sign_fn,
+                memo_keypair=keypair if not args.dry_run else None,
                 model=args.model,
                 max_trade_usdc=args.max_trade_usdc,
             )
