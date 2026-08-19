@@ -1,6 +1,6 @@
 """Solana trading loop — the governed agent runtime.
 
-Connects the analyst pipeline → Governor → Jupiter swaps into a
+Connects the analyst pipeline -> Governor -> Jupiter swaps into a
 continuous trading loop. Every trade decision is governance-checked
 before execution.
 
@@ -16,6 +16,15 @@ import json
 import os
 import sys
 import time
+
+# Fix Windows Unicode encoding
+if sys.platform == "win32":
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except (AttributeError, OSError):
+        pass
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -192,7 +201,7 @@ def run_cycle(
     sign_and_send_fn: Any = None,
     memo_keypair: Any = None,
 ) -> list[dict]:
-    """Run one analysis → governance → execution cycle.
+    """Run one analysis -> governance -> execution cycle.
 
     Returns a list of decision records for logging/display.
     """
@@ -323,7 +332,7 @@ def run_cycle(
 
         # 6. Execute swap
         print(f"    {token}: {decision['action'].upper()} "
-              f"({amount:.2f} {input_sym} → {output_sym}) — Governor APPROVED")
+              f"({amount:.2f} {input_sym} -> {output_sym}) — Governor APPROVED")
 
         swap_result = execute_swap(
             input_symbol=input_sym,
@@ -344,7 +353,7 @@ def run_cycle(
         if swap_result.success:
             mode = "DRY RUN" if dry_run else "EXECUTED"
             print(f"      {mode}: {swap_result.input_amount:.4f} {swap_result.input_symbol} "
-                  f"→ {swap_result.output_amount:.4f} {swap_result.output_symbol}")
+                  f"-> {swap_result.output_amount:.4f} {swap_result.output_symbol}")
             if swap_result.tx_signature:
                 print(f"      TX: {swap_result.tx_signature}")
         else:
@@ -445,9 +454,9 @@ def main(argv: list[str] | None = None) -> None:
     print(f"{'='*60}")
     print(f"  Cycles:     {cycle_count}")
     print(f"  Decisions:  {len(all_records)}")
-    approved = sum(1 for r in all_records if r.get("governance", {}).get("action") == "approve")
-    rejected = sum(1 for r in all_records if r.get("governance", {}).get("action") == "reject")
-    holds = sum(1 for r in all_records if r.get("decision", {}).get("action") == "hold")
+    approved = sum(1 for r in all_records if (r.get("governance") or {}).get("action") == "approve")
+    rejected = sum(1 for r in all_records if (r.get("governance") or {}).get("action") == "reject")
+    holds = sum(1 for r in all_records if (r.get("decision") or {}).get("action") == "hold")
     print(f"  Approved:   {approved}")
     print(f"  Rejected:   {rejected}")
     print(f"  Holds:      {holds}")
