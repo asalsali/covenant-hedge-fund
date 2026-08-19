@@ -210,29 +210,54 @@ def run_cycle(
 
     portfolio_value = sum(balances.values())  # rough estimate
 
-    # 2. Fetch market data
+    # 2. Fetch market data — Solana-native sources (Jupiter + DexScreener + Helius)
     print(f"  Fetching market data for {tokens}...")
-    from src.data.api import get_prices, clear_cache
-    from src.data.crypto import is_crypto
+    from src.solana.data import get_solana_market_data, get_token_prices
 
+    # Also fetch historical prices via yfinance for quant analysts
+    from src.data.api import get_prices, clear_cache
     clear_cache()
     end_date = date.today()
     start_date = end_date - timedelta(days=90)
 
+    # Solana-native real-time data
+    solana_data = get_solana_market_data(tokens)
+
     market_data: dict[str, Any] = {}
     for token in tokens:
         try:
+            # Historical prices for quant analysts (RSI, SMA, etc.)
             prices = get_prices(token, start_date, end_date)
             if prices:
                 market_data[token] = {"prices": prices}
-                # Add crypto metrics
-                if is_crypto(token):
-                    from src.data.crypto import cg_get_crypto_metrics, resolve_coin_id
-                    coin_id = resolve_coin_id(token)
-                    if coin_id:
-                        metrics = cg_get_crypto_metrics(coin_id)
-                        if metrics:
-                            market_data[token]["crypto_metrics"] = metrics
+            else:
+                market_data[token] = {"prices": []}
+
+            # Merge Solana-native data as crypto_metrics
+            sol_data = solana_data.get(token, {})
+            if sol_data:
+                market_data[token]["crypto_metrics"] = {
+                    "price_usd": sol_data.get("price_usd"),
+                    "volume_24h": sol_data.get("volume_24h"),
+                    "liquidity_usd": sol_data.get("liquidity_usd"),
+                    "price_change_24h": sol_data.get("price_change_24h"),
+                    "price_change_6h": sol_data.get("price_change_6h"),
+                    "price_change_1h": sol_data.get("price_change_1h"),
+                    "buy_sell_ratio": sol_data.get("buy_sell_ratio"),
+                    "holders": sol_data.get("holders"),
+                    "supply": sol_data.get("supply"),
+                }
+                # Print what we got
+                price = sol_data.get("price_usd")
+                vol = sol_data.get("volume_24h")
+                chg = sol_data.get("price_change_24h")
+                print(f"    {token}: ${price:.4f}" if price else f"    {token}: no price",
+                      end="")
+                if vol:
+                    print(f" | vol ${vol:,.0f}", end="")
+                if chg is not None:
+                    print(f" | 24h {chg:+.1f}%", end="")
+                print()
         except Exception as e:
             print(f"  WARNING: No data for {token}: {e}")
 
